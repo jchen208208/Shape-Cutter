@@ -12,6 +12,9 @@ body {
   border: 1px solid #444;
   background: #16213e;
   margin-top: 20px;
+  touch-action: none;
+  max-width: 96vw;
+  height: auto;
 }
 button {
   margin-top: 14px;
