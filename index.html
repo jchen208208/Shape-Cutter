@@ -4,12 +4,32 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Shape Cutter</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400..700&family=Space+Grotesk:wght@300..700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <canvas id="game" width="800" height="600"></canvas>
-  <button id="newShape">New Shape</button>
+  <canvas id="bg"></canvas>
+  <main class="menu-wrap">
+    <h1 class="title">Shape Cutter</h1>
+    <div class="slice-line"></div>
+    <p class="tagline">Cut it exactly in half.</p>
+    <div class="menu">
+      <a class="mode" href="shape.html">
+        <canvas id="previewShapes" width="240" height="150"></canvas>
+        <span class="mode-name">Shapes</span>
+        <span class="mode-desc">Slice random polygons</span>
+      </a>
+      <a class="mode" href="objects.html">
+        <canvas id="previewFood" width="240" height="150"></canvas>
+        <span class="mode-name">Food</span>
+        <span class="mode-desc">Split snacks 50/50</span>
+      </a>
+    </div>
+  </main>
   <script src="engine.js"></script>
-  <script src="game.js"></script>
+  <script src="foods.js"></script>
+  <script src="menu.js"></script>
 </body>
 </html>

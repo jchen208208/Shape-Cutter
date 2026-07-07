@@ -91,6 +91,73 @@ for (let i = 0; i < 1000; i++) {
 }
 assertClose(worst, 0, '1000 random cuts: piece areas sum to original (worst error)', 1e-6);
 
+// --- food sprites: each must be one connected blob, its traced outline must
+// cover at least its pixel count (equal, except the donut whose hole is
+// included in the outline), and cuts through it must conserve area.
+// Roughening is random per serving, so the same invariants are re-checked
+// on 25 fresh roughened instances of every food. ---
+const { FOODS, buildSprite, roughenSprite, FOOD_N } = require('./foods.js');
+
+// returns a problem description, or null if the sprite passes all invariants
+function foodProblem(cells, polygon, cutTrials) {
+  const filled = [];
+  for (let y = 0; y < FOOD_N; y++) {
+    for (let x = 0; x < FOOD_N; x++) {
+      if (cells[y][x] === null) continue;
+      if (typeof cells[y][x] !== 'string') {
+        return `cell (${x},${y}) has invalid color ${cells[y][x]} (palette typo?)`;
+      }
+      filled.push([x, y]);
+    }
+  }
+  const seen = new Set([filled[0].join(',')]);
+  const queue = [filled[0]];
+  while (queue.length) {
+    const [x, y] = queue.pop();
+    for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
+      const k = `${nx},${ny}`;
+      if (nx >= 0 && nx < FOOD_N && ny >= 0 && ny < FOOD_N && cells[ny][nx] !== null && !seen.has(k)) {
+        seen.add(k);
+        queue.push([nx, ny]);
+      }
+    }
+  }
+  if (seen.size !== filled.length) {
+    return `disconnected blob (${seen.size} of ${filled.length} px reachable)`;
+  }
+
+  const area = Math.abs(polygonArea(polygon));
+  if (area < filled.length - 1e-6) {
+    return `outline area ${area} < pixel count ${filled.length}`;
+  }
+
+  for (let i = 0; i < cutTrials; i++) {
+    const a = { x: Math.random() * FOOD_N, y: Math.random() * FOOD_N };
+    const b = { x: Math.random() * FOOD_N, y: Math.random() * FOOD_N };
+    const [p1, p2] = splitPolygon(polygon, a, b);
+    const sum = Math.abs(polygonArea(p1)) + Math.abs(polygonArea(p2));
+    if (Math.abs(sum - area) > 1e-6) {
+      return `cut lost area (pieces ${sum} vs whole ${area})`;
+    }
+  }
+  return null;
+}
+
+for (const food of FOODS) {
+  const base = buildSprite(food);
+  let problem = foodProblem(base.cells, base.polygon, 200);
+  for (let i = 0; i < 25 && !problem; i++) {
+    const inst = roughenSprite(base);
+    problem = foodProblem(inst.cells, inst.polygon, 40);
+  }
+  if (problem) {
+    failures++;
+    console.error(`FAIL ${food.name}: ${problem}`);
+  } else {
+    console.log(`ok   ${food.name}: base + 25 roughened servings all valid`);
+  }
+}
+
 if (failures) {
   console.error(`\n${failures} test(s) FAILED`);
   process.exit(1);

@@ -3,10 +3,142 @@ body {
   flex-direction: column;
   align-items: center;
   background: #1a1a2e;
-  font-family: sans-serif;
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  color: #eee;
+  margin: 0;
+  min-height: 100vh;
 }
-canvas {
+#game {
   border: 1px solid #444;
   background: #16213e;
   margin-top: 20px;
+}
+button {
+  margin-top: 14px;
+  font-family: inherit;
+}
+.back {
+  align-self: flex-start;
+  margin: 14px 0 0 14px;
+  color: #99a;
+  text-decoration: none;
+}
+.back:hover {
+  color: #fff;
+}
+
+/* --- landing page --- */
+#bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+}
+.menu-wrap {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.title {
+  margin: 12vh 0 0;
+  font-family: 'Pixelify Sans', monospace;
+  font-size: clamp(44px, 9vw, 80px);
+  font-weight: 600;
+  letter-spacing: 1px;
+  background: linear-gradient(100deg, #e94560 20%, #f5a623 50%, #e94560 80%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: rise 0.7s ease-out both, shimmer 6s linear infinite;
+}
+.slice-line {
+  width: 0;
+  height: 3px;
+  border-radius: 2px;
+  background: #fff;
+  opacity: 0.85;
+  margin-top: 8px;
+  animation: slice 0.6s 0.5s ease-out forwards;
+}
+.tagline {
+  color: #99a;
+  font-size: 18px;
+  margin: 18px 0 0;
+  animation: rise 0.7s 0.2s ease-out both;
+}
+.menu {
+  display: flex;
+  gap: 28px;
+  margin-top: 44px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.mode {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 22px 26px 20px;
+  background: rgba(22, 33, 62, 0.85);
+  border: 1px solid #3a3f5c;
+  border-radius: 16px;
+  color: #fff;
+  text-decoration: none;
+  transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+  animation: rise 0.7s 0.35s ease-out both;
+}
+.mode:nth-child(2) {
+  animation-delay: 0.5s;
+}
+.mode:hover {
+  transform: translateY(-8px) scale(1.03);
+  border-color: #e94560;
+  box-shadow: 0 12px 40px rgba(233, 69, 96, 0.25);
+}
+.mode canvas {
+  border-radius: 10px;
+  background: #10182e;
+}
+.mode-name {
+  font-family: 'Pixelify Sans', monospace;
+  font-size: 26px;
+  font-weight: 600;
+  margin-top: 6px;
+}
+.mode-desc {
+  font-size: 14px;
+  color: #99a;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes shimmer {
+  to {
+    background-position: 200% 0;
+  }
+}
+@keyframes slice {
+  to {
+    width: min(260px, 60vw);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+  .slice-line {
+    width: min(260px, 60vw);
+  }
 }
