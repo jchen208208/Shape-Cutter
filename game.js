@@ -129,7 +129,9 @@ canvas.addEventListener('click', (event) => {
   lastCut = { a: cutA, b: p };
   cutA = null;
   mouse = null;
-  if (p1.length < 3 || p2.length < 3) {
+  // a graze that shaves off a sliver below 0.1% of the area counts as a miss
+  const smaller = Math.min(Math.abs(polygonArea(p1)), Math.abs(polygonArea(p2)));
+  if (p1.length < 3 || p2.length < 3 || smaller < Math.abs(polygonArea(target.polygon)) * 0.001) {
     message = 'Missed — try again';
   } else {
     pieces = [p1, p2];

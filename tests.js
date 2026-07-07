@@ -58,6 +58,14 @@ assertClose(side(a, b, { x: 7, y: 0 }), 0, 'point on the line → 0');
   assertClose(areas[1], 1, 'miss: other piece is the whole square');
 }
 
+// line collinear with an edge: grazes the square, cuts nothing off
+{
+  const [p1, p2] = splitPolygon(square, { x: -3, y: 0 }, { x: 5, y: 0 });
+  const areas = [Math.abs(polygonArea(p1)), Math.abs(polygonArea(p2))].sort();
+  assertClose(areas[0], 0, 'edge graze: nothing cut off');
+  assertClose(areas[1], 1, 'edge graze: whole square intact');
+}
+
 // --- the big one: random polygons + random cuts, pieces must sum ---
 // (same generation method as the game, minus the canvas)
 function randomPolygon() {
@@ -90,6 +98,21 @@ for (let i = 0; i < 1000; i++) {
   worst = Math.max(worst, Math.abs(sum - total));
 }
 assertClose(worst, 0, '1000 random cuts: piece areas sum to original (worst error)', 1e-6);
+
+// cuts passing exactly through two of the polygon's own vertices — the
+// classic precision war story, at scale
+let worstVertex = 0;
+for (let i = 0; i < 500; i++) {
+  const poly = randomPolygon();
+  const vi = Math.floor(Math.random() * poly.length);
+  let vj = Math.floor(Math.random() * poly.length);
+  if (vj === vi) vj = (vj + 1) % poly.length;
+  const total = Math.abs(polygonArea(poly));
+  const [p1, p2] = splitPolygon(poly, poly[vi], poly[vj]);
+  const sum = Math.abs(polygonArea(p1)) + Math.abs(polygonArea(p2));
+  worstVertex = Math.max(worstVertex, Math.abs(sum - total));
+}
+assertClose(worstVertex, 0, '500 vertex-through cuts conserve area (worst error)', 1e-6);
 
 // --- food sprites: each must be one connected blob, its traced outline must
 // cover at least its pixel count (equal, except the donut whose hole is
