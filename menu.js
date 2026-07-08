@@ -5,6 +5,10 @@
 
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+// the dimension-select landing page (index.html) is the only page with the
+// pixel title canvas; it gets the cutting-board backdrop + chase widget
+const LANDING = !!document.getElementById('titleCanvas');
+
 const easeOut = (t) => 1 - (1 - t) ** 3;
 
 // miniature of the game's polygon generator
@@ -231,12 +235,589 @@ function drawSlash(now) {
 
 function drawBackground(now, dt) {
   bgc.clearRect(0, 0, bg.width, bg.height);
+  if (LANDING) {
+    drawBoardBase(); // full-window base + glow
+    updateAmbient(dt); // deep drifting silhouettes + specks
+    drawAmbient();
+    drawBoardGrid(); // grid + board edge, on top of the ambient layer
+    const info = perimeterInfo();
+    updateChase(info, now, dt);
+    drawChase(info, now);
+    return;
+  }
   for (const d of drifters) drawDrifter(d, dt);
   if (now >= nextSlashAt) {
     spawnSlash(now);
     nextSlashAt = now + 2600 + Math.random() * 2400;
   }
   drawSlash(now);
+}
+
+// ===================================================================
+// Landing backdrop: a subtle cutting board, and a chase widget where an
+// avocado (with legs) runs from a knife (with legs) around the window edge,
+// playing hide-and-seek with little idle actions.
+// ===================================================================
+
+// --- the cutting board (fills the whole window) ---
+
+function drawBoardBase() {
+  const W = bg.width;
+  const H = bg.height;
+  const base = bgc.createLinearGradient(0, 0, 0, H);
+  base.addColorStop(0, '#182140');
+  base.addColorStop(1, '#0f1730');
+  bgc.fillStyle = base;
+  bgc.fillRect(0, 0, W, H);
+
+  const glow = bgc.createRadialGradient(W / 2, H * 0.4, 40, W / 2, H * 0.4, Math.max(W, H) * 0.72);
+  glow.addColorStop(0, 'rgba(58, 76, 122, 0.35)');
+  glow.addColorStop(1, 'rgba(10, 14, 28, 0)');
+  bgc.fillStyle = glow;
+  bgc.fillRect(0, 0, W, H);
+}
+
+function drawBoardGrid() {
+  const W = bg.width;
+  const H = bg.height;
+  const px = parallax.x * 5;
+  const py = parallax.y * 5;
+  const step = 46;
+  bgc.lineWidth = 1;
+  bgc.strokeStyle = 'rgba(255, 255, 255, 0.03)';
+  bgc.beginPath();
+  for (let x = ((px % step) + step) % step; x < W; x += step) {
+    bgc.moveTo(x, 0);
+    bgc.lineTo(x, H);
+  }
+  for (let y = ((py % step) + step) % step; y < H; y += step) {
+    bgc.moveTo(0, y);
+    bgc.lineTo(W, y);
+  }
+  bgc.stroke();
+
+  // the board edge the characters walk on, with ruler ticks
+  const info = perimeterInfo();
+  bgc.strokeStyle = 'rgba(120, 150, 210, 0.12)';
+  bgc.lineWidth = 2;
+  bgc.beginPath();
+  const N = 240;
+  for (let i = 0; i <= N; i++) {
+    const p = pathPoint(info, (i / N) * info.P).pos;
+    if (i === 0) bgc.moveTo(p.x, p.y);
+    else bgc.lineTo(p.x, p.y);
+  }
+  bgc.stroke();
+
+  bgc.lineWidth = 1;
+  bgc.beginPath();
+  for (let s = 0; s < info.P; s += 30) {
+    const pt = pathPoint(info, s);
+    bgc.moveTo(pt.pos.x, pt.pos.y);
+    bgc.lineTo(pt.pos.x - pt.outward.x * 6, pt.pos.y - pt.outward.y * 6);
+  }
+  bgc.stroke();
+}
+
+// --- ambient deep background: big slow drifting silhouettes + specks ---
+
+const ambient = [];
+const specks = [];
+
+function makeAmbient(anywhere) {
+  const depth = 0.3 + Math.random() * 0.7;
+  let poly;
+  if (Math.random() < 0.55) {
+    const sprite = buildSprite(FOODS[Math.floor(Math.random() * FOODS.length)]);
+    const sc = (2.4 + Math.random() * 3.4) * depth;
+    poly = sprite.polygon.map((p) => ({ x: (p.x - FOOD_N / 2) * sc, y: (p.y - FOOD_N / 2) * sc }));
+  } else {
+    poly = miniPolygon(0, 0, 28 * depth, 74 * depth);
+  }
+  return {
+    depth,
+    x: Math.random() * innerWidth,
+    y: anywhere ? Math.random() * innerHeight : innerHeight + 160,
+    vy: (5 + Math.random() * 9) * depth,
+    rot: Math.random() * Math.PI * 2,
+    vr: (Math.random() - 0.5) * 0.25,
+    alpha: 0.035 + 0.055 * depth,
+    color: DRIFT_COLORS[Math.floor(Math.random() * DRIFT_COLORS.length)],
+    poly,
+  };
+}
+
+if (LANDING) {
+  for (let i = 0; i < 11; i++) ambient.push(makeAmbient(true));
+  for (let i = 0; i < 46; i++) {
+    specks.push({
+      x: Math.random() * innerWidth,
+      y: Math.random() * innerHeight,
+      vy: 4 + Math.random() * 12,
+      r: 0.6 + Math.random() * 1.6,
+      alpha: 0.04 + Math.random() * 0.09,
+    });
+  }
+}
+
+function updateAmbient(dt) {
+  for (const a of ambient) {
+    a.y -= a.vy * dt;
+    a.rot += a.vr * dt;
+    if (a.y < -180) Object.assign(a, makeAmbient(false));
+  }
+  for (const s of specks) {
+    s.y -= s.vy * dt;
+    if (s.y < -6) {
+      s.y = innerHeight + 6;
+      s.x = Math.random() * innerWidth;
+    }
+  }
+}
+
+function drawAmbient() {
+  for (const a of ambient) {
+    bgc.save();
+    bgc.globalAlpha = a.alpha;
+    bgc.translate(a.x + parallax.x * -22 * a.depth, a.y + parallax.y * -14 * a.depth);
+    bgc.rotate(a.rot);
+    bgc.fillStyle = a.color;
+    tracePath(bgc, a.poly);
+    bgc.fill();
+    bgc.restore();
+  }
+  bgc.fillStyle = '#cfe0ff';
+  for (const s of specks) {
+    bgc.globalAlpha = s.alpha;
+    bgc.beginPath();
+    bgc.arc(s.x + parallax.x * -8, s.y, s.r, 0, Math.PI * 2);
+    bgc.fill();
+  }
+  bgc.globalAlpha = 1;
+}
+
+// --- the perimeter path (rounded rectangle, walked clockwise) ---
+
+function perimeterInfo() {
+  const M = 50;
+  const r = 44;
+  const left = M;
+  const top = M;
+  const right = Math.max(M + 2 * r + 20, innerWidth - M);
+  const bottom = Math.max(M + 2 * r + 20, innerHeight - M);
+  const w = right - left - 2 * r;
+  const h = bottom - top - 2 * r;
+  const arc = (Math.PI / 2) * r;
+  const HALF = Math.PI / 2;
+  const pieces = [
+    { line: 1, len: w, x0: left + r, y0: top, dx: 1, dy: 0, ox: 0, oy: -1 },
+    { line: 0, len: arc, cx: right - r, cy: top + r, r, a0: -HALF },
+    { line: 1, len: h, x0: right, y0: top + r, dx: 0, dy: 1, ox: 1, oy: 0 },
+    { line: 0, len: arc, cx: right - r, cy: bottom - r, r, a0: 0 },
+    { line: 1, len: w, x0: right - r, y0: bottom, dx: -1, dy: 0, ox: 0, oy: 1 },
+    { line: 0, len: arc, cx: left + r, cy: bottom - r, r, a0: HALF },
+    { line: 1, len: h, x0: left, y0: bottom - r, dx: 0, dy: -1, ox: -1, oy: 0 },
+    { line: 0, len: arc, cx: left + r, cy: top + r, r, a0: Math.PI },
+  ];
+  let P = 0;
+  for (const pc of pieces) {
+    pc.s0 = P;
+    P += pc.len;
+  }
+  return { P, pieces };
+}
+
+// position, travel tangent (CW, unit) and outward normal (unit) at arc-length s
+function pathPoint(info, s) {
+  s = ((s % info.P) + info.P) % info.P;
+  for (const pc of info.pieces) {
+    if (s <= pc.s0 + pc.len || pc === info.pieces[info.pieces.length - 1]) {
+      const local = s - pc.s0;
+      if (pc.line) {
+        return {
+          pos: { x: pc.x0 + pc.dx * local, y: pc.y0 + pc.dy * local },
+          tangent: { x: pc.dx, y: pc.dy },
+          outward: { x: pc.ox, y: pc.oy },
+        };
+      }
+      const a = pc.a0 + (local / pc.len) * (Math.PI / 2);
+      const cos = Math.cos(a);
+      const sin = Math.sin(a);
+      return {
+        pos: { x: pc.cx + pc.r * cos, y: pc.cy + pc.r * sin },
+        tangent: { x: -sin, y: cos },
+        outward: { x: cos, y: sin },
+      };
+    }
+  }
+  return { pos: { x: 0, y: 0 }, tangent: { x: 1, y: 0 }, outward: { x: 0, y: -1 } };
+}
+
+// --- characters ---
+
+const WALK = 60;
+const SNEAK = 46;
+const RUN = 216;
+const HUNT = 206;
+
+const runner = {
+  kind: 'avocado',
+  sc: 1.32,
+  headDist: 78,
+  s: 0,
+  dir: 1,
+  speed: 0,
+  state: 'stroll',
+  timer: 0,
+  phase: 0,
+  emote: null,
+};
+const chaser = {
+  kind: 'knife',
+  sc: 0.95,
+  headDist: 80,
+  s: 0,
+  dir: 1,
+  speed: 0,
+  state: 'prowl',
+  timer: 0,
+  phase: 0,
+  emote: null,
+};
+
+const cwPick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+function setEmote(ch, char, now, dur) {
+  ch.emote = { char, until: now + dur * 1000 };
+}
+
+// shortest signed arc-length from a to b (+ = b is clockwise-ahead of a)
+function shortSigned(a, b, P) {
+  let d = ((b - a) % P + P) % P;
+  if (d > P / 2) d -= P;
+  return d;
+}
+
+function wander(ch, now, opts) {
+  if (now < ch.timer) return;
+  if (Math.random() < opts.pauseChance) {
+    ch.speed = 0;
+    ch.timer = now + opts.pauseMin + Math.random() * opts.pauseVar;
+    const act = cwPick(opts.idles);
+    if (act === 'sleep') setEmote(ch, 'z', now, (ch.timer - now) / 1000);
+    else if (act === 'look') {
+      ch.dir *= -1; // glance/turn the other way
+      setEmote(ch, '?', now, 0.7);
+    }
+  } else {
+    ch.speed = opts.walk;
+    ch.dir = Math.random() < 0.5 ? 1 : -1;
+    ch.timer = now + opts.moveMin + Math.random() * opts.moveVar;
+  }
+}
+
+let lastBump = 0;
+
+function updateChase(info, now, dt) {
+  const P = info.P;
+  const gap = shortSigned(chaser.s, runner.s, P); // + means runner is CW-ahead
+  const absGap = Math.abs(gap);
+  // the knife sneaks fairly close before the avocado bolts, so encounters
+  // are tense and they genuinely cross paths
+  const RUN_SIGHT = Math.min(220, P * 0.22);
+  const CHASE_SIGHT = Math.min(300, P * 0.3);
+  const LOSE = Math.min(420, P * 0.42);
+
+  // collision: when they meet, the avocado jukes past and the knife is
+  // briefly stunned — so they actually run into each other
+  if (absGap < 28 && now - lastBump > 1100) {
+    lastBump = now;
+    runner.state = 'flee';
+    runner.dir = -runner.dir; // slip past in the other direction
+    runner.speed = RUN * 1.3;
+    runner.burstUntil = now + 500;
+    setEmote(runner, '!!', now, 0.9);
+    chaser.stunUntil = now + 480;
+    chaser.speed = 0;
+    setEmote(chaser, 'x', now, 0.7);
+  }
+
+  const runnerBursting = now < (runner.burstUntil || 0);
+  const chaserStunned = now < (chaser.stunUntil || 0);
+
+  // avocado: flee if the knife is within sight, else stroll and dawdle
+  if (runnerBursting) {
+    runner.speed = RUN * 1.3;
+  } else if (absGap < RUN_SIGHT) {
+    if (runner.state !== 'flee') {
+      runner.state = 'flee';
+      setEmote(runner, absGap < 120 ? '!!' : '!', now, 1.0);
+    }
+    runner.dir = gap >= 0 ? 1 : -1; // run so the knife stays behind
+    // occasional stumble lets the knife close in for a collision
+    if (runner.stumbleUntil && now < runner.stumbleUntil) runner.speed = 34;
+    else {
+      runner.speed = absGap < 90 ? RUN * 1.1 : RUN;
+      if (Math.random() < 0.004) runner.stumbleUntil = now + 260;
+    }
+  } else if (runner.state === 'flee' && absGap > RUN_SIGHT + 80) {
+    runner.state = 'stroll';
+    runner.timer = now;
+    setEmote(runner, '~', now, 0.9);
+  }
+  if (runner.state === 'stroll') {
+    wander(runner, now, {
+      pauseChance: 0.4,
+      pauseMin: 500,
+      pauseVar: 1500,
+      moveMin: 900,
+      moveVar: 1800,
+      walk: WALK,
+      idles: ['idle', 'look', 'sleep'],
+    });
+  }
+
+  // knife: hunt if the avocado is in sight, else prowl
+  if (chaserStunned) {
+    chaser.speed = 0;
+  } else if (absGap < CHASE_SIGHT) {
+    if (chaser.state !== 'hunt') {
+      chaser.state = 'hunt';
+      setEmote(chaser, '!', now, 1.0);
+    }
+    chaser.dir = gap >= 0 ? 1 : -1; // close the gap the short way
+    chaser.speed = absGap < 95 ? HUNT * 1.32 : HUNT; // lunge when near
+  } else if (chaser.state === 'hunt' && absGap > LOSE) {
+    chaser.state = 'prowl';
+    chaser.timer = now;
+    setEmote(chaser, '?', now, 1.0);
+  }
+  if (!chaserStunned && chaser.state === 'prowl') {
+    wander(chaser, now, {
+      pauseChance: 0.5,
+      pauseMin: 600,
+      pauseVar: 1600,
+      moveMin: 1000,
+      moveVar: 1600,
+      walk: SNEAK,
+      idles: ['idle', 'look'],
+    });
+  }
+
+  for (const ch of [runner, chaser]) {
+    ch.s = (((ch.s + ch.dir * ch.speed * dt) % P) + P) % P;
+    ch.phase += ch.speed * dt * 0.16;
+  }
+}
+
+function drawChase(info, now) {
+  for (const ch of [chaser, runner]) {
+    const { pos, tangent, outward } = pathPoint(info, ch.s);
+    bgc.save();
+    bgc.globalAlpha = 1;
+    bgc.translate(pos.x, pos.y);
+    // local +x → facing (travel dir), local +y → outward (toward the wall)
+    bgc.transform(tangent.x * ch.dir, tangent.y * ch.dir, outward.x, outward.y, 0, 0);
+    bgc.scale(ch.sc, ch.sc);
+    if (ch.kind === 'avocado') drawAvocado(ch, now);
+    else drawKnife(ch, now);
+    bgc.restore();
+
+    if (ch.emote && now < ch.emote.until) {
+      const hx = pos.x - outward.x * ch.headDist;
+      const hy = pos.y - outward.y * ch.headDist;
+      drawEmote(hx, hy, ch.emote.char);
+    }
+  }
+}
+
+function drawEmote(x, y, char) {
+  bgc.save();
+  bgc.globalAlpha = 1;
+  bgc.font = "700 20px 'Pixelify Sans', monospace";
+  bgc.textAlign = 'center';
+  bgc.textBaseline = 'middle';
+  bgc.lineWidth = 5;
+  bgc.strokeStyle = '#16213e';
+  bgc.strokeText(char, x, y);
+  bgc.fillStyle = char === 'z' ? '#9fb4e0' : '#ffd84a';
+  bgc.fillText(char, x, y);
+  bgc.restore();
+}
+
+// two alternating legs, feet on the baseline (local y = 0)
+function drawLegs(hipY, xL, xR, phase, stride, legColor, footColor) {
+  bgc.lineCap = 'round';
+  bgc.lineWidth = 3;
+  bgc.strokeStyle = legColor;
+  for (const [hx, sw] of [
+    [xL, Math.sin(phase) * stride],
+    [xR, Math.sin(phase + Math.PI) * stride],
+  ]) {
+    const fx = hx + sw;
+    const fy = -Math.max(0, sw) * 0.14;
+    bgc.beginPath();
+    bgc.moveTo(hx, hipY);
+    bgc.lineTo(fx, fy);
+    bgc.stroke();
+    bgc.fillStyle = footColor;
+    bgc.fillRect(fx - 2, fy - 1.5, 6, 3);
+  }
+}
+
+function drawBitmap(map, colmap, sp, x0, y0) {
+  for (let r = 0; r < map.length; r++) {
+    const row = map[r];
+    for (let c = 0; c < row.length; c++) {
+      const ch = row[c];
+      if (ch === '.' || ch === ' ') continue;
+      const col = colmap[ch];
+      if (!col) continue;
+      bgc.fillStyle = col;
+      bgc.fillRect(x0 + c * sp, y0 + r * sp, sp + 0.5, sp + 0.5);
+    }
+  }
+}
+
+// a halved avocado (skin ring, flesh, pit) with highlight shading — no face
+const AVO = [
+  '....DDDDD....',
+  '..DDGGGGGDD..',
+  '.DGGGGGGGGGD.',
+  '.DGLLLLLLLGD.',
+  'DGLLLLLLLLLGD',
+  'DGLLLFFFLLLGD',
+  'DGLLFPPPPFLGD',
+  'DGLLFPQQPFLGD',
+  'DGLLFPPPPFLGD',
+  'DGLLLFFFLLLGD',
+  'DGLLLLLLLLLGD',
+  '.DGLLLLLLLGD.',
+  '.DGGGGGGGGGD.',
+  '..DDGGGGGDD..',
+  '....DDDDD....',
+];
+const AVOCOL = {
+  D: '#356028',
+  G: '#5c9440',
+  L: '#c6d98a',
+  F: '#dde9ad',
+  P: '#9c6b43',
+  Q: '#c0895a',
+};
+const AVO_SP = 3.0;
+const AVO_W = AVO[0].length * AVO_SP;
+const AVO_H = AVO.length * AVO_SP;
+
+function drawAvocado(ch, now) {
+  const moving = ch.speed > 1;
+  const running = ch.speed > 120;
+  const stride = running ? 8 : moving ? 4.5 : 0;
+  const bob = moving ? -Math.abs(Math.sin(ch.phase)) * (running ? 2.6 : 1.2) : Math.sin(now / 650) * 0.7;
+
+  drawLegs(-7, -5, 5, ch.phase, stride, '#3f6b2c', '#2f5220');
+
+  bgc.save();
+  bgc.translate(0, bob);
+  const bodyTop = -7 - AVO_H;
+  const midY = bodyTop + AVO_H * 0.5;
+
+  // arms
+  const armSwing = moving ? Math.sin(ch.phase + Math.PI) * (running ? 7 : 3) : Math.sin(now / 650) * 1.2;
+  bgc.strokeStyle = '#3f6b2c';
+  bgc.lineWidth = 3.4;
+  bgc.lineCap = 'round';
+  bgc.beginPath();
+  bgc.moveTo(AVO_W * 0.34, midY);
+  bgc.lineTo(AVO_W * 0.34 + armSwing, midY + 8);
+  bgc.moveTo(-AVO_W * 0.34, midY);
+  bgc.lineTo(-AVO_W * 0.34 - armSwing, midY + 8);
+  bgc.stroke();
+
+  drawBitmap(AVO, AVOCOL, AVO_SP, -AVO_W / 2, bodyTop);
+
+  // soft specular shine on the skin
+  bgc.globalAlpha = 0.16;
+  bgc.fillStyle = '#ffffff';
+  bgc.beginPath();
+  bgc.ellipse(-AVO_W * 0.18, bodyTop + AVO_H * 0.26, AVO_W * 0.15, AVO_H * 0.1, -0.5, 0, Math.PI * 2);
+  bgc.fill();
+  bgc.globalAlpha = 1;
+  bgc.restore();
+}
+
+function drawKnife(ch, now) {
+  const moving = ch.speed > 1;
+  const running = ch.speed > 120;
+  const stride = running ? 8 : moving ? 4.5 : 0;
+  const bob = moving ? -Math.abs(Math.sin(ch.phase)) * (running ? 2.6 : 1.3) : Math.sin(now / 600) * 0.7;
+
+  drawLegs(-4, -4, 4, ch.phase, stride, '#6b4a2e', '#4a3220');
+
+  bgc.save();
+  bgc.translate(0, bob);
+
+  // blade with a metallic left-to-right gradient
+  const grad = bgc.createLinearGradient(-6, 0, 7, 0);
+  grad.addColorStop(0, '#aab3c2');
+  grad.addColorStop(0.4, '#eef2f7');
+  grad.addColorStop(0.75, '#d2d9e2');
+  grad.addColorStop(1, '#f6f9fc');
+  bgc.fillStyle = grad;
+  bgc.beginPath();
+  bgc.moveTo(0, -72);
+  bgc.lineTo(6, -60);
+  bgc.lineTo(6, -22);
+  bgc.lineTo(-6, -22);
+  bgc.lineTo(-6, -58);
+  bgc.closePath();
+  bgc.fill();
+  // spine, fuller line, and a shine streak
+  bgc.strokeStyle = '#8b94a4';
+  bgc.lineWidth = 1.4;
+  bgc.beginPath();
+  bgc.moveTo(-6, -58);
+  bgc.lineTo(-6, -22);
+  bgc.stroke();
+  bgc.strokeStyle = 'rgba(140, 150, 165, 0.6)';
+  bgc.lineWidth = 1;
+  bgc.beginPath();
+  bgc.moveTo(-1, -62);
+  bgc.lineTo(-1, -26);
+  bgc.stroke();
+  bgc.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+  bgc.lineWidth = 2;
+  bgc.beginPath();
+  bgc.moveTo(2.5, -56);
+  bgc.lineTo(3.2, -30);
+  bgc.stroke();
+
+  // bolster
+  bgc.fillStyle = '#c7ccd6';
+  bgc.fillRect(-6, -24, 12, 4);
+  bgc.fillStyle = '#3a2718';
+  bgc.fillRect(-6, -21, 12, 2);
+
+  // wooden handle with grain and rivets, rounded butt
+  bgc.fillStyle = '#8f5b3a';
+  bgc.beginPath();
+  bgc.roundRect(-6, -19, 12, 16, 4);
+  bgc.fill();
+  bgc.strokeStyle = 'rgba(70, 45, 28, 0.7)';
+  bgc.lineWidth = 1;
+  bgc.beginPath();
+  bgc.moveTo(-3, -17);
+  bgc.lineTo(-3, -5);
+  bgc.moveTo(1.5, -18);
+  bgc.lineTo(1.5, -4);
+  bgc.stroke();
+  bgc.fillStyle = '#d8c39a';
+  for (const ry of [-14, -8]) {
+    bgc.beginPath();
+    bgc.arc(-1, ry, 1.4, 0, Math.PI * 2);
+    bgc.fill();
+  }
+  bgc.restore();
 }
 
 // --- shapes preview: a polygon gets sliced on loop by the real engine ---
@@ -1072,8 +1653,22 @@ function drawOverlay(now) {
 
 // --- drive it ---
 
+if (LANDING) {
+  // start the avocado and knife well apart on the perimeter
+  const info0 = perimeterInfo();
+  runner.s = info0.P * 0.2;
+  chaser.s = info0.P * 0.52;
+}
+
 if (REDUCED) {
   // static frame of each preview, no motion
+  if (LANDING) {
+    drawBoardBase();
+    drawAmbient();
+    drawBoardGrid();
+    const info = perimeterInfo();
+    drawChase(info, performance.now());
+  }
   if (tc) drawTitle(performance.now());
   if (sp) drawShapesPreview(slice.start + 500);
   if (fp) drawFoodPreview(dish.start + 1000);
