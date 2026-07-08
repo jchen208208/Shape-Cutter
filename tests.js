@@ -182,7 +182,14 @@ for (const food of FOODS) {
 }
 
 // --- 1D strings: cuts must conserve arc length, and queries must behave ---
-const { buildString, nearestOnPolyline, polylineSwipeCut, cutPolyline } = require('./strings.js');
+const {
+  buildString,
+  nearestOnPolyline,
+  swipeCrossings,
+  polylineSwipeCut,
+  clampSwipe,
+  cutPolyline,
+} = require('./strings.js');
 
 {
   let worst1d = 0;
@@ -211,6 +218,21 @@ const { buildString, nearestOnPolyline, polylineSwipeCut, cutPolyline } = requir
   assertClose(hit ? 1 : 0, 1, 'center cross-swipe hits the string');
   const near = nearestOnPolyline(s.pts, s.pts[Math.floor(s.pts.length / 2)]);
   assertClose(near.dist, 0, 'nearest point to an on-string point is itself', 1e-9);
+
+  // the clamped swipe must never cross the string twice, and must respect
+  // both the raw drag length and the max reach
+  let worstCrossings = 0;
+  let lenOk = true;
+  for (let i = 0; i < 500; i++) {
+    const str = buildString(400, 300);
+    const a = { x: (Math.random() - 0.5) * 600, y: (Math.random() - 0.5) * 600 };
+    const b = { x: (Math.random() - 0.5) * 600, y: (Math.random() - 0.5) * 600 };
+    const clamped = clampSwipe(str.pts, a, b, 200);
+    worstCrossings = Math.max(worstCrossings, swipeCrossings(str.pts, a, clamped.end).length);
+    if (clamped.len > Math.min(Math.hypot(b.x - a.x, b.y - a.y), 200) + 1e-9) lenOk = false;
+  }
+  assertClose(worstCrossings <= 1 ? 1 : 0, 1, '500 clamped swipes: never cross twice');
+  assertClose(lenOk ? 1 : 0, 1, 'clamped swipe respects drag length and max reach');
 }
 
 if (failures) {

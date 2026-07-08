@@ -92,13 +92,11 @@ function nearestOnPolyline(pts, p) {
   return best;
 }
 
-// where segment A→B first crosses the polyline (nearest crossing to A),
-// or null if it never does. First contact cuts — so a swipe across a
-// tangled string still yields exactly one cut point.
-function polylineSwipeCut(pts, a, b) {
+// all crossings of segment A→B with the polyline, sorted along the swipe
+function swipeCrossings(pts, a, b) {
   const abx = b.x - a.x;
   const aby = b.y - a.y;
-  let best = null;
+  const hits = [];
   for (let i = 0; i < pts.length - 1; i++) {
     const p = pts[i];
     const q = pts[i + 1];
@@ -109,11 +107,33 @@ function polylineSwipeCut(pts, a, b) {
     const u = ((p.x - a.x) * pqy - (p.y - a.y) * pqx) / denom; // along swipe
     const v = ((p.x - a.x) * aby - (p.y - a.y) * abx) / -denom; // along segment
     if (u < 0 || u > 1 || v < 0 || v > 1) continue;
-    if (!best || u < best.u) {
-      best = { u, index: i, t: v, point: { x: p.x + v * pqx, y: p.y + v * pqy } };
-    }
+    hits.push({ u, index: i, t: v, point: { x: p.x + v * pqx, y: p.y + v * pqy } });
   }
-  return best;
+  hits.sort((m, n) => m.u - n.u);
+  return hits;
+}
+
+// where segment A→B first crosses the polyline, or null
+function polylineSwipeCut(pts, a, b) {
+  return swipeCrossings(pts, a, b)[0] || null;
+}
+
+// The swipe the player is actually allowed: capped at maxLen, and stopped
+// halfway between the first and second crossing — so one swipe can never
+// sever two strands of a tangled string.
+function clampSwipe(pts, a, b, maxLen) {
+  const raw = Math.hypot(b.x - a.x, b.y - a.y);
+  if (raw < 1e-9) return { end: { x: b.x, y: b.y }, len: 0 };
+  const ux = (b.x - a.x) / raw;
+  const uy = (b.y - a.y) / raw;
+  let len = Math.min(raw, maxLen);
+  let end = { x: a.x + ux * len, y: a.y + uy * len };
+  const hits = swipeCrossings(pts, a, end);
+  if (hits.length >= 2) {
+    len = ((hits[0].u + hits[1].u) / 2) * len;
+    end = { x: a.x + ux * len, y: a.y + uy * len };
+  }
+  return { end, len };
 }
 
 // cut at segment `index`, parameter `t` → two polylines and their lengths
@@ -136,5 +156,13 @@ function cutPolyline(pts, cum, index, t) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { buildString, polylineCum, nearestOnPolyline, polylineSwipeCut, cutPolyline };
+  module.exports = {
+    buildString,
+    polylineCum,
+    nearestOnPolyline,
+    swipeCrossings,
+    polylineSwipeCut,
+    clampSwipe,
+    cutPolyline,
+  };
 }

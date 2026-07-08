@@ -127,8 +127,10 @@ let state = 'aim'; // 'aim' → 'reveal' → … → 'over'
 let round = 1;
 let total = 0;
 let target = makeString();
-let swipeA = null;
-let swipeB = null;
+let swipe = null; // { a, end, hit } — end is clamped, hit is the predicted cut
+
+// the knife's reach: a swipe can never span the page
+const maxSwipe = () => Math.min(canvas.width, canvas.height) * 0.28;
 let cut = null; // result of cutPolyline + normal/pcts/score
 let sparks = [];
 let revealStart = 0;
@@ -136,8 +138,7 @@ let message = '';
 
 function startRound() {
   target = makeString();
-  swipeA = null;
-  swipeB = null;
+  swipe = null;
   cut = null;
   sparks = [];
   state = 'aim';
@@ -275,16 +276,31 @@ function draw(now, dt) {
 
   if (state === 'aim') {
     drawString(target.pts, target.colors);
-    if (swipeA && swipeB) {
+    if (swipe) {
       ctx.save();
       ctx.setLineDash([10, 8]);
       ctx.lineDashOffset = -now / 24;
       ctx.strokeStyle = 'rgba(255,255,255,0.9)';
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.moveTo(swipeA.x, swipeA.y);
-      ctx.lineTo(swipeB.x, swipeB.y);
+      ctx.moveTo(swipe.a.x, swipe.a.y);
+      ctx.lineTo(swipe.end.x, swipe.end.y);
       ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(swipe.a.x, swipe.a.y, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(swipe.end.x, swipe.end.y, 3, 0, Math.PI * 2);
+      ctx.fill();
+      if (swipe.hit) {
+        // pulsing ring on the exact point this swipe will cut
+        ctx.strokeStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(swipe.hit.point.x, swipe.hit.point.y, 8 + Math.sin(now / 140) * 2, 0, Math.PI * 2);
+        ctx.stroke();
+      }
       ctx.restore();
     }
     if (message) drawLabel(message, canvas.width / 2, 34, 18);
@@ -314,23 +330,24 @@ canvas.addEventListener('pointerdown', (event) => {
     return;
   }
   canvas.setPointerCapture(event.pointerId);
-  swipeA = p;
-  swipeB = p;
+  swipe = { a: p, end: p, hit: null };
 });
 
 canvas.addEventListener('pointermove', (event) => {
-  if (state !== 'aim' || !swipeA) return;
-  swipeB = { x: event.clientX, y: event.clientY };
+  if (state !== 'aim' || !swipe) return;
+  const raw = { x: event.clientX, y: event.clientY };
+  // the swipe is clamped live: capped reach, and stopped before it could
+  // ever touch a second strand
+  swipe.end = clampSwipe(target.pts, swipe.a, raw, maxSwipe()).end;
+  swipe.hit = polylineSwipeCut(target.pts, swipe.a, swipe.end);
 });
 
 canvas.addEventListener('pointerup', () => {
-  if (state !== 'aim' || !swipeA) return;
-  const a = swipeA;
-  const b = swipeB || a;
-  swipeA = null;
-  swipeB = null;
+  if (state !== 'aim' || !swipe) return;
+  const { a, end, hit } = swipe;
+  swipe = null;
 
-  if (Math.hypot(b.x - a.x, b.y - a.y) < 6) {
+  if (Math.hypot(end.x - a.x, end.y - a.y) < 6) {
     // a tap: snap to the nearest point on the string, if close enough
     const near = nearestOnPolyline(target.pts, a);
     if (near && near.dist <= 26) {
@@ -340,8 +357,6 @@ canvas.addEventListener('pointerup', () => {
     }
     return;
   }
-  // a swipe: cut where it first crosses the string
-  const hit = polylineSwipeCut(target.pts, a, b);
   if (hit) applyCut(hit);
   else message = 'Missed the string — swipe across it';
 });
