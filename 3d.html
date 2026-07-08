@@ -3,35 +3,28 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Shape Cutter</title>
+  <title>Shape Cutter — 3D</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400..700&family=Orbitron:wght@500;700&family=Space+Grotesk:wght@300..700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <a class="back" href="index.html">&larr; dimensions</a>
   <canvas id="bg"></canvas>
   <main class="menu-wrap">
-    <h1 class="title"><canvas id="titleCanvas" width="836" height="96" aria-label="Shape Cutter"></canvas></h1>
-    <div class="slice-line"></div>
-    <p class="tagline">one cut. two halves. <span class="tagline-accent">zero mercy.</span></p>
+    <h1 class="page-head">pick a solid</h1>
     <div class="menu">
-      <a class="mode dim-card mode-d1" href="1d.html">
-        <canvas id="previewD1" width="240" height="150"></canvas>
-        <span class="mode-name">1D</span>
-        <span class="mode-desc">strings and segments</span>
+      <a class="mode mode-shapes" href="shape3d.html">
+        <canvas id="previewShape3d" width="240" height="150"></canvas>
+        <span class="mode-name">Shapes</span>
+        <span class="mode-desc">cleave lumpy solids</span>
         <span class="mode-hint">drag across to slice in</span>
       </a>
-      <a class="mode dim-card mode-d2" href="2d.html">
-        <canvas id="previewD2" width="240" height="150"></canvas>
-        <span class="mode-name">2D</span>
-        <span class="mode-desc">flat shapes, clean cuts</span>
-        <span class="mode-hint">drag across to slice in</span>
-      </a>
-      <a class="mode dim-card mode-d3" href="3d.html">
-        <canvas id="previewD3" width="240" height="150"></canvas>
-        <span class="mode-name">3D</span>
-        <span class="mode-desc">solids and volumes</span>
+      <a class="mode mode-food" href="food3d.html">
+        <canvas id="previewFood3d" width="240" height="150"></canvas>
+        <span class="mode-name">Food</span>
+        <span class="mode-desc">split voxel snacks <span class="num">50/50</span></span>
         <span class="mode-hint">drag across to slice in</span>
       </a>
     </div>
@@ -42,6 +35,7 @@
   </main>
   <script src="engine.js"></script>
   <script src="foods.js"></script>
+  <script src="solids.js"></script>
   <script src="menu.js"></script>
 </body>
 </html>

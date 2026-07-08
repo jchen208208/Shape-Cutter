@@ -343,6 +343,108 @@ function drawFoodPreview(now) {
   fpc.globalAlpha = 1;
 }
 
+// --- 3D select page previews: a rotating lumpy solid and a voxel food ---
+// (only initialized on 3d.html, where solids.js is loaded)
+
+const s3 = document.getElementById('previewShape3d');
+const f3 = document.getElementById('previewFood3d');
+const s3c = s3 ? s3.getContext('2d') : null;
+const f3c = f3 ? f3.getContext('2d') : null;
+const HAS_SOLIDS = typeof buildSolid !== 'undefined';
+
+let s3solid = null;
+let f3vox = null;
+if (s3 && HAS_SOLIDS) s3solid = buildSolid();
+if (f3 && HAS_SOLIDS) {
+  const sprite = buildSprite(FOODS[Math.floor(Math.random() * FOODS.length)]);
+  f3vox = voxelizeCells(sprite.cells, FOOD_N);
+}
+
+// tiny orthographic painter's-algorithm renderer for the preview cards
+function drawMini3D(c, W, H, polys, scale, yaw3, pitch3) {
+  const cy = Math.cos(yaw3);
+  const sy = Math.sin(yaw3);
+  const cp = Math.cos(pitch3);
+  const sp = Math.sin(pitch3);
+  const m = [cy, 0, sy, sp * sy, cp, -sp * cy, -cp * sy, sp, cp * cy];
+  const items = [];
+  for (const poly of polys) {
+    const nz = m[6] * poly.n.x + m[7] * poly.n.y + m[8] * poly.n.z;
+    if (nz <= 0) continue;
+    const nx = m[0] * poly.n.x + m[1] * poly.n.y + m[2] * poly.n.z;
+    const ny = m[3] * poly.n.x + m[4] * poly.n.y + m[5] * poly.n.z;
+    const lit = 0.55 + 0.45 * Math.max(0, -0.4 * nx - 0.55 * ny + 0.65 * nz);
+    const pts = poly.pts.map((p) => ({
+      x: W / 2 + (m[0] * p.x + m[1] * p.y + m[2] * p.z) * scale,
+      y: H / 2 + (m[3] * p.x + m[4] * p.y + m[5] * p.z) * scale,
+      z: m[6] * p.x + m[7] * p.y + m[8] * p.z,
+    }));
+    let z = 0;
+    for (const p of pts) z += p.z;
+    items.push({ z: z / pts.length, pts, fill: shade(poly.color, lit) });
+  }
+  items.sort((a, b) => a.z - b.z);
+  for (const it of items) {
+    c.beginPath();
+    c.moveTo(it.pts[0].x, it.pts[0].y);
+    for (let i = 1; i < it.pts.length; i++) c.lineTo(it.pts[i].x, it.pts[i].y);
+    c.closePath();
+    c.fillStyle = it.fill;
+    c.fill();
+    c.strokeStyle = it.fill;
+    c.stroke();
+  }
+}
+
+function solidPreviewPolys(solid, color) {
+  const polys = [];
+  for (const [a, b, c] of solid.tris) {
+    const A = solid.verts[a];
+    const B = solid.verts[b];
+    const C = solid.verts[c];
+    polys.push({ pts: [A, B, C], n: v3.norm(v3.cross(v3.sub(B, A), v3.sub(C, A))), color });
+  }
+  return polys;
+}
+
+const MINI_DIRS = [
+  { d: { x: 1, y: 0, z: 0 }, o: [[1, 0, 0], [1, 1, 0], [1, 1, 1], [1, 0, 1]] },
+  { d: { x: -1, y: 0, z: 0 }, o: [[0, 0, 0], [0, 0, 1], [0, 1, 1], [0, 1, 0]] },
+  { d: { x: 0, y: 1, z: 0 }, o: [[0, 1, 0], [0, 1, 1], [1, 1, 1], [1, 1, 0]] },
+  { d: { x: 0, y: -1, z: 0 }, o: [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]] },
+  { d: { x: 0, y: 0, z: 1 }, o: [[0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]] },
+  { d: { x: 0, y: 0, z: -1 }, o: [[0, 0, 0], [0, 1, 0], [1, 1, 0], [1, 0, 0]] },
+];
+
+function voxelPreviewPolys(vox) {
+  const polys = [];
+  for (const v of vox.voxels) {
+    const c = voxelCorner(v, FOOD_N);
+    for (const dir of MINI_DIRS) {
+      if (vox.lookup.has(`${v.x + dir.d.x},${v.y + dir.d.y},${v.z + dir.d.z}`)) continue;
+      polys.push({
+        pts: dir.o.map((o) => ({ x: c.x + o[0], y: c.y + o[1], z: c.z + o[2] })),
+        n: dir.d,
+        color: v.c,
+      });
+    }
+  }
+  return polys;
+}
+
+let s3polys = s3solid ? solidPreviewPolys(s3solid, '#e94560') : null;
+let f3polys = f3vox ? voxelPreviewPolys(f3vox) : null;
+
+function drawShape3dPreview(now) {
+  s3c.clearRect(0, 0, s3.width, s3.height);
+  drawMini3D(s3c, s3.width, s3.height, s3polys, 48, now / 1900, -0.5 + Math.sin(now / 2600) * 0.15);
+}
+
+function drawFood3dPreview(now) {
+  f3c.clearRect(0, 0, f3.width, f3.height);
+  drawMini3D(f3c, f3.width, f3.height, f3polys, 4.6, now / 2200, -0.55 + Math.sin(now / 3000) * 0.12);
+}
+
 // --- dimension previews (landing page): a 1D segment, a 2D plane and a 3D
 // cube, each on its own cut → separate → heal loop ---
 
@@ -978,6 +1080,8 @@ if (REDUCED) {
   if (d1) drawD1(dimStart + 500);
   if (d2) drawD2(dimStart + 500);
   if (d3) drawD3(dimStart + 500);
+  if (s3polys) drawShape3dPreview(1000);
+  if (f3polys) drawFood3dPreview(1000);
 } else {
   let last = performance.now();
   function tick(now) {
@@ -990,6 +1094,8 @@ if (REDUCED) {
     if (d1) drawD1(now);
     if (d2) drawD2(now);
     if (d3) drawD3(now);
+    if (s3polys) drawShape3dPreview(now);
+    if (f3polys) drawFood3dPreview(now);
     drawOverlay(now);
     requestAnimationFrame(tick);
   }

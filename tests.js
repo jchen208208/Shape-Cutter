@@ -235,6 +235,98 @@ const {
   assertClose(lenOk ? 1 : 0, 1, 'clamped swipe respects drag length and max reach');
 }
 
+// --- 3D solids: clipping and volume math must be exact ---
+const S3 = require('./solids.js');
+
+{
+  assertClose(S3.polyVolume(S3.boxPoly(0, 0, 0, 1, 1, 1)), 1, 'unit box volume = 1');
+  const clipped = S3.clipConvex(S3.boxPoly(0, 0, 0, 1, 1, 1), { x: 1, y: 0, z: 0 }, 0.25);
+  assertClose(S3.polyVolume(clipped), 0.75, 'box clipped at x>=0.25 → 0.75');
+  const diag = S3.clipConvex(
+    S3.boxPoly(0, 0, 0, 1, 1, 1),
+    S3.v3.norm({ x: 1, y: 1, z: 0 }),
+    0.9 * Math.SQRT1_2
+  );
+  assertClose(S3.polyVolume(diag), 0.595, 'diagonal box clip → 0.595');
+
+  // random clips must conserve volume and match numeric integration
+  let worstSum = 0;
+  let worstNumeric = 0;
+  for (let i = 0; i < 300; i++) {
+    const n = S3.v3.norm({ x: Math.random() - 0.5, y: Math.random() - 0.5, z: Math.random() - 0.5 });
+    const d = (Math.random() - 0.5) * 1.2;
+    const box = S3.boxPoly(0, 0, 0, 1, 1, 1);
+    const p = S3.clipConvex(box, n, d);
+    const q = S3.clipConvex(box, { x: -n.x, y: -n.y, z: -n.z }, -d);
+    const vp = p ? S3.polyVolume(p) : 0;
+    worstSum = Math.max(worstSum, Math.abs(vp + (q ? S3.polyVolume(q) : 0) - 1));
+    if (i < 15) {
+      let inside = 0;
+      const K = 24;
+      for (let a = 0; a < K; a++) {
+        for (let b = 0; b < K; b++) {
+          for (let c = 0; c < K; c++) {
+            const pt = { x: (a + 0.5) / K, y: (b + 0.5) / K, z: (c + 0.5) / K };
+            if (S3.v3.dot(n, pt) - d >= 0) inside++;
+          }
+        }
+      }
+      worstNumeric = Math.max(worstNumeric, Math.abs(vp - inside / (K * K * K)));
+    }
+  }
+  assertClose(worstSum, 0, '300 random box clips conserve volume (worst)', 1e-9);
+  assertClose(worstNumeric < 0.012 ? 1 : 0, 1, 'clip volumes match numeric integration');
+
+  // random solids: split volumes conserve
+  let worstMesh = 0;
+  for (let i = 0; i < 100; i++) {
+    const solid = S3.buildSolid();
+    const totalV = S3.meshVolume(solid.verts, solid.tris);
+    const plane = {
+      n: S3.v3.norm({ x: Math.random() - 0.5, y: Math.random() - 0.5, z: Math.random() - 0.5 }),
+      d: (Math.random() - 0.5) * 0.8,
+    };
+    const sv = S3.meshSideVolumes(solid.verts, solid.tris, plane);
+    worstMesh = Math.max(worstMesh, Math.abs(sv.plus + sv.minus - totalV), Math.abs(sv.total - totalV));
+  }
+  assertClose(worstMesh, 0, '100 random solid splits conserve volume (worst)', 1e-9);
+
+  // voxel foods: splits conserve, total = voxel count
+  let worstVox = 0;
+  for (const food of FOODS.slice(0, 5)) {
+    const vox = S3.voxelizeCells(buildSprite(food).cells, FOOD_N);
+    for (let i = 0; i < 20; i++) {
+      const plane = {
+        n: S3.v3.norm({ x: Math.random() - 0.5, y: Math.random() - 0.5, z: Math.random() - 0.5 }),
+        d: (Math.random() - 0.5) * 8 + 0.0001,
+      };
+      const sv = S3.voxelSideVolumes(vox.voxels, FOOD_N, plane);
+      worstVox = Math.max(worstVox, Math.abs(sv.plus + sv.minus - vox.voxels.length));
+    }
+  }
+  assertClose(worstVox, 0, 'voxel food splits conserve volume (worst)', 1e-6);
+
+  // the swipe→plane transform round-trips: a world point on the plane
+  // projects onto the screen line it came from
+  for (let i = 0; i < 50; i++) {
+    const yaw3 = Math.random() * 6;
+    const pitch3 = (Math.random() - 0.5) * 2;
+    const a = { x: Math.random() * 800, y: Math.random() * 600 };
+    const b = { x: Math.random() * 800, y: Math.random() * 600 };
+    const plane = S3.planeFromScreenLine(a, b, yaw3, pitch3, 400, 300, 120);
+    // midpoint of the screen line, unprojected at depth 0, must satisfy the plane
+    const mid = { x: ((a.x + b.x) / 2 - 400) / 120, y: ((a.y + b.y) / 2 - 300) / 120, z: 0 };
+    const w = S3.viewToWorld(mid, yaw3, pitch3);
+    const err = Math.abs(S3.v3.dot(plane.n, w) - plane.d);
+    if (err > 1e-9) {
+      failures++;
+      console.error(`FAIL screen-line plane round-trip: err ${err}`);
+      break;
+    }
+    if (i === 49) console.log('ok   screen-line → world plane round-trips (50 views)');
+  }
+}
+
 if (failures) {
   console.error(`\n${failures} test(s) FAILED`);
   process.exit(1);
