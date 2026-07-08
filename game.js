@@ -6,6 +6,13 @@
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 
+function sizeCanvas() {
+  canvas.width = innerWidth;
+  canvas.height = innerHeight;
+}
+sizeCanvas();
+addEventListener('resize', sizeCanvas);
+
 const ROUNDS = 5;
 const easeOutCubic = (t) => 1 - (1 - t) ** 3;
 
@@ -50,23 +57,204 @@ function drawLine(a, b, style) {
   ctx.stroke();
 }
 
-// outlined text so labels stay readable over any colors
+// Outlined text so labels stay readable over any colors. Letters use the
+// pixel font; digits, %, . and / render in the digital-clock font
+// (Orbitron). Text is split into runs and each run measured so the mix
+// still comes out centered on x.
+const DIGITAL_CHARS = /[0-9%./]/;
+
 function drawLabel(text, x, y, size = 16, color = '#fff') {
-  ctx.font = `${size}px 'Pixelify Sans', monospace`;
-  ctx.textAlign = 'center';
+  const runs = [];
+  for (const ch of text) {
+    const digital = DIGITAL_CHARS.test(ch);
+    const last = runs[runs.length - 1];
+    if (last && last.digital === digital) last.text += ch;
+    else runs.push({ text: ch, digital });
+  }
+  const fontFor = (d) =>
+    d
+      ? `${Math.round(size * 0.85)}px 'Orbitron', monospace`
+      : `${size}px 'Pixelify Sans', monospace`;
+  let width = 0;
+  for (const r of runs) {
+    ctx.font = fontFor(r.digital);
+    r.w = ctx.measureText(r.text).width;
+    width += r.w;
+  }
+  let cx = x - width / 2;
+  ctx.textAlign = 'left';
   ctx.lineWidth = Math.max(3, size / 5);
   ctx.strokeStyle = '#16213e';
-  ctx.strokeText(text, x, y);
-  ctx.fillStyle = color;
-  ctx.fillText(text, x, y);
+  for (const r of runs) {
+    ctx.font = fontFor(r.digital);
+    ctx.strokeText(r.text, cx, y);
+    ctx.fillStyle = color;
+    ctx.fillText(r.text, cx, y);
+    cx += r.w;
+  }
   ctx.lineWidth = 1;
-  ctx.textAlign = 'left';
 }
 
 function scoreColor(s) {
   if (s >= 95) return '#8fbf58';
   if (s >= 80) return '#f5a623';
   return '#e94560';
+}
+
+// --- cut effects: knife + crumbs (food), laser + sparks (shapes) ---
+
+let fx = null;
+
+// where the infinite cut line enters and exits the polygon — the sweep path
+function cutSpan(polygon, a, b) {
+  const hits = [];
+  for (let i = 0; i < polygon.length; i++) {
+    const p = polygon[i];
+    const q = polygon[(i + 1) % polygon.length];
+    const sp = side(a, b, p);
+    const sq = side(a, b, q);
+    if (Math.abs(sp) <= EPS) hits.push(p);
+    if ((sp > EPS && sq < -EPS) || (sp < -EPS && sq > EPS)) {
+      hits.push(lineSegmentIntersection(a, b, p, q));
+    }
+  }
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  hits.sort((u, v) => u.x * dx + u.y * dy - (v.x * dx + v.y * dy));
+  return [hits[0], hits[hits.length - 1]];
+}
+
+function startCutFx() {
+  const [e0, e1] = cutSpan(target.polygon, lastCut.a, lastCut.b);
+  fx = {
+    e0,
+    e1,
+    kind: target.fx || 'laser',
+    colors: target.fxColors || [],
+    sweep: target.fx === 'knife' ? 0.35 : 0.25, // seconds to cross the shape
+    particles: [],
+    carry: 0,
+  };
+}
+
+// chunky pixel knife, drawn in a frame rotated to the cut direction
+function drawKnife(pos, ang, alpha, prog) {
+  const s = Math.min(canvas.width, canvas.height) / 600;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(pos.x, pos.y);
+  ctx.rotate(ang);
+  ctx.translate(0, -Math.abs(Math.sin(prog * Math.PI * 5)) * 3 * s); // chop bob
+  ctx.scale(s, s);
+  ctx.fillStyle = '#d8dee9'; // blade
+  ctx.fillRect(-34, -13, 36, 10);
+  ctx.beginPath();
+  ctx.moveTo(2, -13);
+  ctx.lineTo(14, -3);
+  ctx.lineTo(2, -3);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#f4f7fb'; // cutting edge highlight
+  ctx.fillRect(-34, -5, 38, 2);
+  ctx.fillStyle = '#8f5b3a'; // handle
+  ctx.fillRect(-52, -12, 18, 8);
+  ctx.fillStyle = '#6b4226';
+  ctx.fillRect(-46, -12, 3, 8);
+  ctx.fillRect(-40, -12, 3, 8);
+  ctx.restore();
+}
+
+function updateAndDrawFx(t, dt) {
+  if (!fx) return;
+  const prog = Math.min(t / fx.sweep, 1);
+  const tip = {
+    x: fx.e0.x + (fx.e1.x - fx.e0.x) * prog,
+    y: fx.e0.y + (fx.e1.y - fx.e0.y) * prog,
+  };
+  const ang = Math.atan2(fx.e1.y - fx.e0.y, fx.e1.x - fx.e0.x);
+  const nx = -Math.sin(ang);
+  const ny = Math.cos(ang);
+
+  // emit particles from the tip while it sweeps
+  if (prog < 1 && fx.particles.length < 260) {
+    fx.carry += dt * (fx.kind === 'knife' ? 150 : 240);
+    while (fx.carry >= 1) {
+      fx.carry -= 1;
+      const sgn = Math.random() < 0.5 ? 1 : -1;
+      const speed = 40 + Math.random() * (fx.kind === 'knife' ? 130 : 240);
+      fx.particles.push({
+        x: tip.x + nx * (Math.random() - 0.5) * 10,
+        y: tip.y + ny * (Math.random() - 0.5) * 10,
+        vx: nx * speed * sgn + (Math.random() - 0.5) * 60,
+        vy: ny * speed * sgn + (Math.random() - 0.5) * 60,
+        age: 0,
+        life: fx.kind === 'knife' ? 0.5 + Math.random() * 0.5 : 0.2 + Math.random() * 0.35,
+        size: fx.kind === 'knife' ? 3 + Math.random() * 4 : 2 + Math.random() * 2,
+        color:
+          fx.kind === 'knife'
+            ? fx.colors[Math.floor(Math.random() * fx.colors.length)] || '#d9a066'
+            : ['#ffffff', '#e94560', '#f5a623'][Math.floor(Math.random() * 3)],
+      });
+    }
+  }
+
+  for (const p of fx.particles) {
+    p.age += dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    if (fx.kind === 'knife') p.vy += 500 * dt; // crumbs fall
+  }
+  fx.particles = fx.particles.filter((p) => p.age < p.life);
+  for (const p of fx.particles) {
+    ctx.globalAlpha = 1 - p.age / p.life;
+    ctx.fillStyle = p.color;
+    if (fx.kind === 'knife') {
+      ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+    } else {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 1;
+
+  if (fx.kind === 'laser') {
+    const fade = t < fx.sweep ? 1 : Math.max(0, 1 - (t - fx.sweep) / 0.45);
+    if (fade > 0) {
+      ctx.save();
+      ctx.globalAlpha = fade;
+      ctx.shadowColor = '#e94560';
+      ctx.shadowBlur = 18;
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(fx.e0.x, fx.e0.y);
+      ctx.lineTo(tip.x, tip.y);
+      ctx.stroke();
+      if (prog < 1) {
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(tip.x, tip.y, 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+  } else {
+    const fade = t < fx.sweep ? 0.8 : Math.max(0, 0.8 - (t - fx.sweep) / 0.4);
+    if (fade > 0) {
+      ctx.save();
+      ctx.globalAlpha = fade;
+      ctx.strokeStyle = '#fff';
+      ctx.beginPath();
+      ctx.moveTo(fx.e0.x, fx.e0.y);
+      ctx.lineTo(tip.x, tip.y);
+      ctx.stroke();
+      ctx.restore();
+    }
+    if (t < fx.sweep + 0.12) {
+      drawKnife(tip, ang, t < fx.sweep ? 1 : 1 - (t - fx.sweep) / 0.12, prog);
+    }
+  }
 }
 
 // --- game state ---
@@ -90,6 +278,7 @@ function startRound() {
   cutA = null;
   mouse = null;
   pieces = null;
+  fx = null;
   state = 'aim';
   message = `Round ${round}/${ROUNDS} — cut it in half!`;
 }
@@ -119,41 +308,44 @@ function attemptCut(p) {
   const len = Math.hypot(dx, dy);
   cutNormal = { x: -dy / len, y: dx / len };
 
+  startCutFx();
   state = 'reveal';
   revealStart = performance.now();
 }
 
-function drawReveal(t) {
-  // screen shake right after the cut lands
+function drawReveal(t, dt) {
+  const sweep = fx ? fx.sweep : 0;
+  const st = t - sweep; // time since the sweep finished the cut
+
+  // screen shake at the moment the cut lands
   let sx = 0;
   let sy = 0;
-  if (t < 0.15) {
-    const m = (1 - t / 0.15) * 5;
+  if (st >= 0 && st < 0.15) {
+    const m = (1 - st / 0.15) * 5;
     sx = (Math.random() * 2 - 1) * m;
     sy = (Math.random() * 2 - 1) * m;
   }
   ctx.save();
   ctx.translate(sx, sy);
 
-  const k = easeOutCubic(Math.min(t / 0.7, 1)) * 22;
+  // pieces hold together until the sweep passes, then slide apart
+  const k = easeOutCubic(Math.min(Math.max(st, 0) / 0.7, 1)) * 22;
   pieces.forEach((piece, i) => {
     const s = i === 0 ? 1 : -1;
     ctx.save();
     ctx.translate(cutNormal.x * k * s, cutNormal.y * k * s);
     target.drawPiece(piece, i);
-    if (t > 0.3) {
+    if (st > 0.3) {
       const l = labelPoint(piece);
       drawLabel(`${pcts[i].toFixed(1)}%`, l.x, l.y);
     }
     ctx.restore();
   });
 
-  if (t < 0.5) {
-    drawLine(lastCut.a, lastCut.b, `rgba(255,255,255,${1 - t / 0.5})`);
-  }
+  updateAndDrawFx(t, dt);
   ctx.restore();
 
-  if (t > 0.35) {
+  if (st > 0.3) {
     drawLabel(
       `${pcts[0].toFixed(1)}% / ${pcts[1].toFixed(1)}% — score ${roundScore.toFixed(1)}`,
       canvas.width / 2,
@@ -165,13 +357,13 @@ function drawReveal(t) {
       drawLabel('PERFECT!', canvas.width / 2, 62, 22, '#8fbf58');
     }
   }
-  if (t > 1.0 && state === 'reveal') {
+  if (t > 1.3 && state === 'reveal') {
     drawLabel(
       round < ROUNDS ? 'tap for next round' : 'tap for results',
       canvas.width / 2,
       canvas.height - 20,
       14,
-      '#99aa'
+      '#aabbcc'
     );
   }
 }
@@ -183,29 +375,50 @@ function drawGameOver() {
   const avg = total / ROUNDS;
   drawLabel('Results', cx, 200, 34);
   drawLabel(`total ${total.toFixed(1)} / ${ROUNDS * 100}`, cx, 260, 24, scoreColor(avg));
-  drawLabel(`average ${avg.toFixed(1)} per cut`, cx, 296, 18, '#99aa');
+  drawLabel(`average ${avg.toFixed(1)} per cut`, cx, 296, 18, '#aabbcc');
   drawLabel('tap to play again', cx, 370, 16);
 }
 
-function draw(now) {
+function draw(now, dt) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // HUD
-  drawLabel(`round ${Math.min(round, ROUNDS)}/${ROUNDS}`, 64, 26, 14, '#99aa');
-  drawLabel(`total ${total.toFixed(1)}`, canvas.width - 70, 26, 14, '#99aa');
+  // HUD chips, top-right (top-left belongs to the back-to-menu link)
+  ctx.fillStyle = 'rgba(15, 52, 96, 0.8)';
+  ctx.strokeStyle = '#3a3f5c';
+  ctx.beginPath();
+  ctx.roundRect(canvas.width - 336, 12, 156, 34, 8);
+  ctx.roundRect(canvas.width - 168, 12, 156, 34, 8);
+  ctx.fill();
+  ctx.stroke();
+  drawLabel(`round ${Math.min(round, ROUNDS)}/${ROUNDS}`, canvas.width - 258, 35, 16);
+  drawLabel(`total ${total.toFixed(1)}`, canvas.width - 90, 35, 16);
 
   if (state === 'aim') {
     target.drawWhole();
     if (cutA) {
-      if (mouse) drawLine(cutA, mouse, '#0f0');
+      if (mouse) {
+        // marching-ants aim line
+        ctx.save();
+        ctx.setLineDash([12, 9]);
+        ctx.lineDashOffset = -now / 24;
+        ctx.shadowColor = 'rgba(255,255,255,0.7)';
+        ctx.shadowBlur = 6;
+        drawLine(cutA, mouse, 'rgba(255,255,255,0.9)');
+        ctx.restore();
+      }
+      const pulse = 4 + Math.sin(now / 160) * 1.5;
       ctx.beginPath();
-      ctx.arc(cutA.x, cutA.y, 4, 0, Math.PI * 2);
-      ctx.fillStyle = '#0f0';
+      ctx.arc(cutA.x, cutA.y, pulse, 0, Math.PI * 2);
+      ctx.fillStyle = '#fff';
       ctx.fill();
+      ctx.beginPath();
+      ctx.arc(cutA.x, cutA.y, pulse + 5, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+      ctx.stroke();
     }
     if (message) drawLabel(message, canvas.width / 2, 34, 18);
   } else {
-    drawReveal(state === 'over' ? 2 : (now - revealStart) / 1000);
+    drawReveal(state === 'over' ? 2 : (now - revealStart) / 1000, dt);
     if (state === 'over') drawGameOver();
   }
 }
@@ -224,7 +437,7 @@ canvas.addEventListener('pointerdown', (event) => {
 
   if (state === 'reveal') {
     // brief lockout so the reveal isn't skipped by accident
-    if ((performance.now() - revealStart) / 1000 < 0.6) return;
+    if ((performance.now() - revealStart) / 1000 < 1.0) return;
     if (round >= ROUNDS) {
       state = 'over';
     } else {
@@ -257,16 +470,11 @@ window.addEventListener('keydown', (event) => {
   message = `Round ${round}/${ROUNDS} — cut it in half!`;
 });
 
-document.getElementById('newTarget').addEventListener('click', () => {
-  if (state === 'over') {
-    round = 1;
-    total = 0;
-  }
-  startRound();
-});
-
+let lastFrame = performance.now();
 function frame(now) {
-  draw(now);
+  const dt = Math.min((now - lastFrame) / 1000, 0.05);
+  lastFrame = now;
+  draw(now, dt);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

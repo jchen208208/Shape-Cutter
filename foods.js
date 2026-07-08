@@ -448,42 +448,51 @@ function buildSprite(food) {
 
 // --- the mode interface used by game.js (browser only below this point) ---
 
-function foodOffset() {
-  return {
-    x: (canvas.width - FOOD_N * FOOD_SCALE) / 2,
-    y: (canvas.height - FOOD_N * FOOD_SCALE) / 2,
-  };
-}
-
-function drawFood(cells) {
-  const o = foodOffset();
+function drawFood(cells, o, s) {
   for (let y = 0; y < FOOD_N; y++) {
     for (let x = 0; x < FOOD_N; x++) {
       if (cells[y][x] === null) continue;
       ctx.fillStyle = cells[y][x];
-      ctx.fillRect(o.x + x * FOOD_SCALE, o.y + y * FOOD_SCALE, FOOD_SCALE, FOOD_SCALE);
+      ctx.fillRect(o.x + x * s, o.y + y * s, s, s);
     }
   }
 }
 
 function makeTarget() {
   const sprite = roughenSprite(buildSprite(FOODS[Math.floor(Math.random() * FOODS.length)]));
-  const o = foodOffset();
+  // cell size scales with the window; offset and size are captured here so
+  // the drawn sprite and the cut polygon can never disagree (e.g. after a
+  // window resize mid-round)
+  const s = FOOD_SCALE * (Math.min(canvas.width, canvas.height) / 600);
+  const o = {
+    x: (canvas.width - FOOD_N * s) / 2,
+    y: (canvas.height - FOOD_N * s) / 2,
+  };
   const polygon = sprite.polygon.map((p) => ({
-    x: o.x + p.x * FOOD_SCALE,
-    y: o.y + p.y * FOOD_SCALE,
+    x: o.x + p.x * s,
+    y: o.y + p.y * s,
   }));
+
+  // this food's own colors, for the crumb particles when it gets cut
+  const fxColors = [];
+  for (const row of sprite.cells) {
+    for (const c of row) {
+      if (c !== null && !fxColors.includes(c) && fxColors.length < 8) fxColors.push(c);
+    }
+  }
 
   return {
     polygon,
+    fx: 'knife',
+    fxColors,
     drawWhole() {
-      drawFood(sprite.cells);
+      drawFood(sprite.cells, o, s);
     },
     drawPiece(points, i) {
       ctx.save();
       pathPolygon(points);
       ctx.clip();
-      drawFood(sprite.cells);
+      drawFood(sprite.cells, o, s);
       ctx.restore();
     },
   };

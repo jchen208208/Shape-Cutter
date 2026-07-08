@@ -9,21 +9,25 @@ body {
   min-height: 100vh;
 }
 #game {
-  border: 1px solid #444;
+  position: fixed;
+  inset: 0;
   background: #16213e;
-  margin-top: 20px;
   touch-action: none;
-  max-width: 96vw;
-  height: auto;
 }
 button {
   margin-top: 14px;
   font-family: inherit;
 }
 .back {
-  align-self: flex-start;
-  margin: 14px 0 0 14px;
-  color: #99a;
+  position: fixed;
+  top: 14px;
+  left: 14px;
+  z-index: 10;
+  padding: 6px 14px;
+  background: rgba(15, 52, 96, 0.8);
+  border: 1px solid #3a3f5c;
+  border-radius: 8px;
+  color: #ccd;
   text-decoration: none;
 }
 .back:hover {
@@ -73,36 +77,60 @@ button {
 }
 .menu {
   display: flex;
-  gap: 28px;
+  gap: 56px;
   margin-top: 44px;
   flex-wrap: wrap;
   justify-content: center;
 }
 .mode {
+  --accent: #e94560;
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 22px 26px 20px;
-  background: rgba(22, 33, 62, 0.85);
-  border: 1px solid #3a3f5c;
-  border-radius: 16px;
+  gap: 5px;
+  padding: 26px 30px 20px;
+  background: linear-gradient(160deg, #1f2a4e 0%, #131c38 100%);
+  border: 2px dashed color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: 6px;
   color: #fff;
   text-decoration: none;
   transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
   animation: rise 0.7s 0.35s ease-out both;
 }
+.mode-food {
+  --accent: #f5a623;
+}
 .mode:nth-child(2) {
   animation-delay: 0.5s;
 }
+/* scissors riding the dashed "cut here" border */
+.mode::before {
+  content: '\2702';
+  position: absolute;
+  top: -16px;
+  left: 20px;
+  font-size: 20px;
+  transform: rotate(90deg);
+  color: #ccd;
+  background: #1a1a2e;
+  padding: 0 4px;
+}
 .mode:hover {
   transform: translateY(-8px) scale(1.03);
-  border-color: #e94560;
-  box-shadow: 0 12px 40px rgba(233, 69, 96, 0.25);
+  border-style: solid;
+  border-color: var(--accent);
+  box-shadow: 0 12px 40px color-mix(in srgb, var(--accent) 28%, transparent),
+    inset 0 0 30px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.mode:hover::before {
+  animation: snip 0.5s ease-in-out infinite;
 }
 .mode canvas {
-  border-radius: 10px;
+  border-radius: 4px;
   background: #10182e;
+  touch-action: none;
+  cursor: crosshair;
 }
 .mode-name {
   font-family: 'Pixelify Sans', monospace;
@@ -111,8 +139,44 @@ button {
   margin-top: 6px;
 }
 .mode-desc {
-  font-size: 14px;
-  color: #99a;
+  font-family: 'Pixelify Sans', monospace;
+  font-size: 15px;
+  letter-spacing: 0.5px;
+  color: #aab3d0;
+}
+.mode-hint {
+  font-family: 'Pixelify Sans', monospace;
+  font-size: 13px;
+  color: var(--accent);
+  opacity: 0.65;
+  transition: opacity 0.2s ease;
+}
+.mode.hint-flash {
+  animation: cardshake 0.4s ease;
+}
+.mode.hint-flash .mode-hint {
+  opacity: 1;
+}
+@keyframes snip {
+  0%,
+  100% {
+    transform: rotate(82deg);
+  }
+  50% {
+    transform: rotate(98deg);
+  }
+}
+@keyframes cardshake {
+  0%,
+  100% {
+    transform: none;
+  }
+  25% {
+    transform: translateX(-6px);
+  }
+  75% {
+    transform: translateX(6px);
+  }
 }
 
 @keyframes rise {

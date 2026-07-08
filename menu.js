@@ -267,10 +267,53 @@ function newSliceScene() {
 }
 
 let slice = newSliceScene();
+const spState = { aim: null, cut: null }; // the player's own slice on the card
+
+function drawAimDash(c, a, b, now) {
+  c.save();
+  c.setLineDash([8, 6]);
+  c.lineDashOffset = -now / 30;
+  c.strokeStyle = 'rgba(255,255,255,0.9)';
+  c.beginPath();
+  c.moveTo(a.x, a.y);
+  c.lineTo(b.x, b.y);
+  c.stroke();
+  c.restore();
+}
 
 function drawShapesPreview(now) {
-  const t = (now - slice.start) / 1000;
   spc.clearRect(0, 0, sp.width, sp.height);
+
+  if (spState.cut) {
+    // the player sliced the card: halves fly apart, then we navigate
+    const ct = (now - spState.cut.start) / 1000;
+    const k = easeOut(Math.min(ct / 0.45, 1)) * 14;
+    spState.cut.pieces.forEach((piece, i) => {
+      const s = i === 0 ? 1 : -1;
+      spc.save();
+      spc.translate(spState.cut.normal.x * k * s, spState.cut.normal.y * k * s);
+      tracePath(spc, piece);
+      spc.fillStyle = PIECE_PREVIEW_COLORS[i];
+      spc.fill();
+      spc.strokeStyle = '#fff';
+      spc.stroke();
+      spc.restore();
+    });
+    return;
+  }
+
+  if (spState.aim) {
+    slice.start = now; // hold the demo loop while the player aims
+    tracePath(spc, slice.poly);
+    spc.fillStyle = PIECE_PREVIEW_COLORS[0];
+    spc.fill();
+    spc.strokeStyle = '#fff';
+    spc.stroke();
+    drawAimDash(spc, spState.aim[0], spState.aim[1], now);
+    return;
+  }
+
+  const t = (now - slice.start) / 1000;
 
   if (t < 1.0) {
     // aim: shape sits there while the cut line sweeps in
@@ -316,26 +359,155 @@ const fpc = fp.getContext('2d');
 
 function newFoodScene() {
   return {
-    cells: roughenSprite(buildSprite(FOODS[Math.floor(Math.random() * FOODS.length)])).cells,
+    sprite: roughenSprite(buildSprite(FOODS[Math.floor(Math.random() * FOODS.length)])),
     start: performance.now(),
+    geom: null, // where the sprite was drawn last frame: {x, y, s}
   };
 }
 
 let dish = newFoodScene();
+const fpState = { aim: null, cut: null, geom: null };
 
 function drawFoodPreview(now) {
+  fpc.clearRect(0, 0, fp.width, fp.height);
+
+  if (fpState.cut) {
+    const g = fpState.geom;
+    const ct = (now - fpState.cut.start) / 1000;
+    const k = easeOut(Math.min(ct / 0.45, 1)) * 14;
+    fpState.cut.pieces.forEach((piece, i) => {
+      const s = i === 0 ? 1 : -1;
+      fpc.save();
+      fpc.translate(fpState.cut.normal.x * k * s, fpState.cut.normal.y * k * s);
+      tracePath(fpc, piece);
+      fpc.clip();
+      drawCellsAt(fpc, dish.sprite.cells, g.x, g.y, g.s);
+      fpc.restore();
+    });
+    return;
+  }
+
+  if (fpState.aim && fpState.geom) {
+    dish.start = now - 1000; // hold the swap cycle (and the bob) while aiming
+    const g = fpState.geom;
+    drawCellsAt(fpc, dish.sprite.cells, g.x, g.y, g.s);
+    drawAimDash(fpc, fpState.aim[0], fpState.aim[1], now);
+    return;
+  }
+
   const t = (now - dish.start) / 1000;
   if (t > 3.2) dish = newFoodScene();
 
-  fpc.clearRect(0, 0, fp.width, fp.height);
   const pop = 0.75 + 0.25 * easeOut(Math.min(t / 0.35, 1));
   const bob = Math.sin(t * 2.2) * 3;
   const s = 5.4 * pop;
   const size = FOOD_N * s;
+  dish.geom = { x: (fp.width - size) / 2, y: (fp.height - size) / 2 + bob, s };
   fpc.globalAlpha = Math.min(t / 0.25, 1);
-  drawCellsAt(fpc, dish.cells, (fp.width - size) / 2, (fp.height - size) / 2 + bob, s);
+  drawCellsAt(fpc, dish.sprite.cells, dish.geom.x, dish.geom.y, s);
   fpc.globalAlpha = 1;
 }
+
+// --- slice-to-enter: drag a cut across a card's preview to pick that mode ---
+
+function canvasPoint(el, e) {
+  const r = el.getBoundingClientRect();
+  return {
+    x: (e.clientX - r.left) * (el.width / r.width),
+    y: (e.clientY - r.top) * (el.height / r.height),
+  };
+}
+
+function flashHint(card) {
+  card.classList.add('hint-flash');
+  setTimeout(() => card.classList.remove('hint-flash'), 700);
+}
+
+function wireSlicing(el, page, api) {
+  const card = el.closest('.mode');
+  let aimStart = null;
+
+  // plain pointer clicks don't navigate — slicing does. Keyboard "clicks"
+  // (Enter on the focused link, e.detail === 0) still navigate normally.
+  card.addEventListener('click', (e) => {
+    if (!REDUCED && e.detail !== 0) e.preventDefault();
+  });
+  card.addEventListener('dragstart', (e) => e.preventDefault());
+
+  el.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    el.setPointerCapture(e.pointerId);
+    aimStart = canvasPoint(el, e);
+    api.begin(aimStart);
+  });
+  el.addEventListener('pointermove', (e) => {
+    if (aimStart) api.update(aimStart, canvasPoint(el, e));
+  });
+  el.addEventListener('pointerup', (e) => {
+    if (!aimStart) return;
+    const a = aimStart;
+    aimStart = null;
+    const b = canvasPoint(el, e);
+    if (Math.hypot(b.x - a.x, b.y - a.y) >= 8) {
+      const polygon = api.polygon();
+      if (polygon) {
+        const [p1, p2] = splitPolygon(polygon, a, b);
+        if (p1.length >= 3 && p2.length >= 3) {
+          const len = Math.hypot(b.x - a.x, b.y - a.y);
+          api.cut([p1, p2], { x: -(b.y - a.y) / len, y: (b.x - a.x) / len });
+          setTimeout(() => {
+            location.href = page;
+          }, 520);
+          return;
+        }
+      }
+    }
+    api.clear(); // too short a drag, or the line missed — nudge the hint
+    flashHint(card);
+  });
+}
+
+wireSlicing(sp, 'shape.html', {
+  begin(p) {
+    spState.aim = [p, p];
+  },
+  update(a, b) {
+    spState.aim = [a, b];
+  },
+  clear() {
+    spState.aim = null;
+  },
+  polygon() {
+    return slice.poly;
+  },
+  cut(pieces, normal) {
+    spState.aim = null;
+    spState.cut = { pieces, normal, start: performance.now() };
+  },
+});
+
+wireSlicing(fp, 'objects.html', {
+  begin(p) {
+    fpState.geom = dish.geom;
+    fpState.aim = [p, p];
+  },
+  update(a, b) {
+    fpState.aim = [a, b];
+  },
+  clear() {
+    fpState.aim = null;
+    fpState.geom = null;
+  },
+  polygon() {
+    const g = fpState.geom;
+    if (!g) return null;
+    return dish.sprite.polygon.map((p) => ({ x: g.x + p.x * g.s, y: g.y + p.y * g.s }));
+  },
+  cut(pieces, normal) {
+    fpState.aim = null;
+    fpState.cut = { pieces, normal, start: performance.now() };
+  },
+});
 
 // --- drive it ---
 

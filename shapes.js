@@ -20,10 +20,12 @@ function randomPolygon() {
   }
 
   const points = [];
+  // radius scales with the window so shapes fill a similar share of any screen
+  const scale = Math.min(canvas.width, canvas.height) / 600;
   let angle = Math.random() * Math.PI * 2;
   for (let i = 0; i < n; i++) {
     angle += (steps[i] / total) * Math.PI * 2;
-    const r = 150 + Math.random() * 100; // radius 150–250 keeps us on canvas
+    const r = (150 + Math.random() * 100) * scale;
     points.push({
       x: cx + r * Math.cos(angle),
       y: cy + r * Math.sin(angle),
@@ -84,6 +86,7 @@ function makeTarget() {
 
   return {
     polygon,
+    fx: 'laser',
     drawWhole() {
       fillPolygon(polygon, PIECE_COLORS[0]);
     },

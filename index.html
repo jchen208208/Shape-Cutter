@@ -6,7 +6,7 @@
   <title>Shape Cutter</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400..700&family=Space+Grotesk:wght@300..700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400..700&family=Orbitron:wght@500;700&family=Space+Grotesk:wght@300..700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -16,15 +16,17 @@
     <div class="slice-line"></div>
     <p class="tagline">Cut it exactly in half.</p>
     <div class="menu">
-      <a class="mode" href="shape.html">
+      <a class="mode mode-shapes" href="shape.html">
         <canvas id="previewShapes" width="240" height="150"></canvas>
         <span class="mode-name">Shapes</span>
-        <span class="mode-desc">Slice random polygons</span>
+        <span class="mode-desc">slice random polygons</span>
+        <span class="mode-hint">drag across to slice in</span>
       </a>
-      <a class="mode" href="objects.html">
+      <a class="mode mode-food" href="objects.html">
         <canvas id="previewFood" width="240" height="150"></canvas>
         <span class="mode-name">Food</span>
-        <span class="mode-desc">Split snacks 50/50</span>
+        <span class="mode-desc">split snacks 50/50</span>
+        <span class="mode-hint">drag across to slice in</span>
       </a>
     </div>
   </main>
