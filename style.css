@@ -112,6 +112,34 @@ button {
 .mode:nth-child(2) {
   animation-delay: 0.5s;
 }
+.mode:nth-child(3) {
+  animation-delay: 0.65s;
+}
+.mode-d1 {
+  --accent: #5f85db;
+}
+.mode-d2 {
+  --accent: #e94560;
+}
+.mode-d3 {
+  --accent: #f5a623;
+}
+.dim-card .mode-name {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 24px;
+  letter-spacing: 2px;
+}
+.num {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 13px;
+}
+.page-head {
+  font-family: 'Pixelify Sans', monospace;
+  font-size: clamp(30px, 6vw, 42px);
+  color: #fff;
+  margin: 10vh 0 0;
+  animation: rise 0.7s ease-out both;
+}
 /* target-bracket corners: this card is something you cut */
 .mode::before,
 .mode::after {

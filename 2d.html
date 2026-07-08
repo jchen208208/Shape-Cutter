@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shape Cutter — 2D</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400..700&family=Orbitron:wght@500;700&family=Space+Grotesk:wght@300..700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="back" href="index.html">&larr; dimensions</a>
+  <canvas id="bg"></canvas>
+  <main class="menu-wrap">
+    <h1 class="page-head">pick a target</h1>
+    <div class="menu">
+      <a class="mode mode-shapes" href="shape.html">
+        <canvas id="previewShapes" width="240" height="150"></canvas>
+        <span class="mode-name">Shapes</span>
+        <span class="mode-desc">slice random polygons</span>
+        <span class="mode-hint">drag across to slice in</span>
+      </a>
+      <a class="mode mode-food" href="objects.html">
+        <canvas id="previewFood" width="240" height="150"></canvas>
+        <span class="mode-name">Food</span>
+        <span class="mode-desc">split snacks <span class="num">50/50</span></span>
+        <span class="mode-hint">drag across to slice in</span>
+      </a>
+    </div>
+    <p class="how">
+      <span class="how-demo"><span class="how-dot"></span></span>
+      <span>press and hold, drag across a card, release to slice in</span>
+    </p>
+  </main>
+  <script src="engine.js"></script>
+  <script src="foods.js"></script>
+  <script src="menu.js"></script>
+</body>
+</html>

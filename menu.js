@@ -241,8 +241,11 @@ function drawBackground(now, dt) {
 
 // --- shapes preview: a polygon gets sliced on loop by the real engine ---
 
+// This script powers both menu pages: the dimension select (index.html) and
+// the 2D target select (2d.html). Each preview initializes only if its
+// canvas exists on the current page.
 const sp = document.getElementById('previewShapes');
-const spc = sp.getContext('2d');
+const spc = sp ? sp.getContext('2d') : null;
 const PIECE_PREVIEW_COLORS = ['#e94560', '#f5a623'];
 
 function newSliceScene() {
@@ -266,7 +269,7 @@ function newSliceScene() {
   }
 }
 
-let slice = newSliceScene();
+let slice = sp ? newSliceScene() : null;
 
 function drawShapesPreview(now) {
   spc.clearRect(0, 0, sp.width, sp.height);
@@ -312,7 +315,7 @@ function drawShapesPreview(now) {
 // --- food preview: pixel foods pop in and bob ---
 
 const fp = document.getElementById('previewFood');
-const fpc = fp.getContext('2d');
+const fpc = fp ? fp.getContext('2d') : null;
 
 function newFoodScene() {
   return {
@@ -322,7 +325,7 @@ function newFoodScene() {
   };
 }
 
-let dish = newFoodScene();
+let dish = fp ? newFoodScene() : null;
 
 function drawFoodPreview(now) {
   fpc.clearRect(0, 0, fp.width, fp.height);
@@ -340,13 +343,252 @@ function drawFoodPreview(now) {
   fpc.globalAlpha = 1;
 }
 
+// --- dimension previews (landing page): a 1D segment, a 2D plane and a 3D
+// cube, each on its own cut → separate → heal loop ---
+
+const d1 = document.getElementById('previewD1');
+const d2 = document.getElementById('previewD2');
+const d3 = document.getElementById('previewD3');
+const d1c = d1 ? d1.getContext('2d') : null;
+const d2c = d2 ? d2.getContext('2d') : null;
+const d3c = d3 ? d3.getContext('2d') : null;
+const dimStart = performance.now();
+
+const DIM_PERIOD = 3.8; // seconds per cut cycle
+
+// phase within the cycle: [0,2) idle, [2,2.15) flash, then separate and heal.
+// offset de-syncs the three cards so they don't all cut at once.
+function dimCycle(now, offset) {
+  const total = (now - dimStart) / 1000 + offset;
+  const t = total % DIM_PERIOD;
+  const cycle = Math.floor(total / DIM_PERIOD);
+  let sep = 0; // 0..1 how far apart the halves are
+  if (t >= 2.15 && t < 2.9) sep = easeOut(Math.min((t - 2.15) / 0.45, 1));
+  else if (t >= 2.9) sep = 1 - easeOut(Math.min((t - 2.9) / 0.8, 1));
+  const flash = t >= 2.0 && t < 2.15 ? 1 - (t - 2.0) / 0.15 : 0;
+  return { t, cycle, sep, flash };
+}
+
+// cheap deterministic per-cycle random in [0,1)
+function cycleRand(cycle, salt) {
+  const v = Math.sin(cycle * 127.1 + salt * 311.7) * 43758.5453;
+  return v - Math.floor(v);
+}
+
+// 1D: a segment with a point wandering along it; the cut splits it along
+// its own axis — the only direction 1D has
+function drawD1(now) {
+  const W = d1.width;
+  const H = d1.height;
+  d1c.clearRect(0, 0, W, H);
+  const { cycle, sep, flash } = dimCycle(now, 0);
+  const y = H / 2;
+  const x0 = 34;
+  const x1 = W - 34;
+  const cutX = x0 + (0.3 + cycleRand(cycle, 1) * 0.4) * (x1 - x0);
+  const gap = sep * 15;
+
+  d1c.lineCap = 'round';
+  d1c.lineWidth = 5;
+  d1c.strokeStyle = '#5f85db';
+  d1c.beginPath();
+  d1c.moveTo(x0 - gap, y);
+  d1c.lineTo(cutX - Math.max(gap, 2), y);
+  d1c.moveTo(cutX + Math.max(gap, 2), y);
+  d1c.lineTo(x1 + gap, y);
+  d1c.stroke();
+
+  d1c.fillStyle = '#fff';
+  for (const ex of [x0 - gap, x1 + gap]) {
+    d1c.beginPath();
+    d1c.arc(ex, y, 4, 0, Math.PI * 2);
+    d1c.fill();
+  }
+  if (sep === 0 && flash === 0) {
+    // a point living its one-dimensional life
+    const px = x0 + (0.5 + 0.5 * Math.sin(now / 700)) * (x1 - x0);
+    d1c.beginPath();
+    d1c.arc(px, y, 3.5, 0, Math.PI * 2);
+    d1c.fill();
+  }
+  if (flash > 0) {
+    d1c.save();
+    d1c.globalAlpha = flash;
+    d1c.strokeStyle = '#fff';
+    d1c.lineWidth = 2;
+    d1c.beginPath();
+    d1c.moveTo(cutX, y - 20);
+    d1c.lineTo(cutX, y + 20);
+    d1c.stroke();
+    d1c.restore();
+  }
+}
+
+// 2D: a breathing grid plane, sliced at a different angle every cycle
+function drawD2(now) {
+  const W = d2.width;
+  const H = d2.height;
+  d2c.clearRect(0, 0, W, H);
+  const { cycle, sep, flash } = dimCycle(now, 1.3);
+  const c = { x: W / 2, y: H / 2 };
+  const rect = [
+    { x: 38, y: 30 },
+    { x: W - 38, y: 30 },
+    { x: W - 38, y: H - 30 },
+    { x: 38, y: H - 30 },
+  ];
+  const th = cycleRand(cycle, 7) * Math.PI;
+  const dir = { x: Math.cos(th), y: Math.sin(th) };
+  const n = { x: -dir.y, y: dir.x };
+  const a = { x: c.x - dir.x * 300, y: c.y - dir.y * 300 };
+  const b = { x: c.x + dir.x * 300, y: c.y + dir.y * 300 };
+  const k = sep * 10;
+
+  const drawGrid = () => {
+    d2c.lineWidth = 2;
+    d2c.strokeStyle = 'rgba(233, 69, 96, 0.9)';
+    tracePath(d2c, rect);
+    d2c.stroke();
+    d2c.lineWidth = 1;
+    d2c.strokeStyle = 'rgba(233, 69, 96, 0.35)';
+    d2c.beginPath();
+    for (let gx = rect[0].x + 27.4; gx < rect[1].x; gx += 27.4) {
+      d2c.moveTo(gx, rect[0].y);
+      d2c.lineTo(gx, rect[2].y);
+    }
+    for (let gy = rect[0].y + 22.5; gy < rect[2].y; gy += 22.5) {
+      d2c.moveTo(rect[0].x, gy);
+      d2c.lineTo(rect[1].x, gy);
+    }
+    d2c.stroke();
+  };
+
+  d2c.save();
+  // the plane breathes a little so it reads as alive
+  d2c.translate(c.x, c.y);
+  d2c.rotate(Math.sin(now / 2100) * 0.04);
+  d2c.scale(1 + Math.sin(now / 1500) * 0.02, 1 + Math.sin(now / 1500) * 0.02);
+  d2c.translate(-c.x, -c.y);
+
+  if (k === 0) {
+    drawGrid();
+  } else {
+    splitPolygon(rect, a, b).forEach((piece, i) => {
+      if (piece.length < 3) return;
+      const s = i === 0 ? 1 : -1;
+      d2c.save();
+      d2c.translate(n.x * k * s, n.y * k * s);
+      tracePath(d2c, piece);
+      d2c.clip();
+      drawGrid();
+      d2c.restore();
+    });
+  }
+  if (flash > 0) {
+    const span = lineSpanThroughRect(rect, a, b);
+    if (span) {
+      d2c.globalAlpha = flash;
+      d2c.strokeStyle = '#fff';
+      d2c.lineWidth = 2;
+      d2c.beginPath();
+      d2c.moveTo(span[0].x, span[0].y);
+      d2c.lineTo(span[1].x, span[1].y);
+      d2c.stroke();
+      d2c.globalAlpha = 1;
+    }
+  }
+  d2c.restore();
+}
+
+// 3D: a rotating wireframe cube, cleaved by a plane every cycle
+const CUBE_EDGES = [
+  [0, 1], [1, 3], [3, 2], [2, 0],
+  [4, 5], [5, 7], [7, 6], [6, 4],
+  [0, 4], [1, 5], [2, 6], [3, 7],
+];
+
+function cubePoints(cx, cy, size, ry, rx) {
+  const pts = [];
+  for (let i = 0; i < 8; i++) {
+    const x = i & 1 ? 1 : -1;
+    const y = i & 2 ? 1 : -1;
+    const z = i & 4 ? 1 : -1;
+    const x1 = x * Math.cos(ry) + z * Math.sin(ry);
+    const z1 = -x * Math.sin(ry) + z * Math.cos(ry);
+    const y1 = y * Math.cos(rx) - z1 * Math.sin(rx);
+    pts.push({ x: cx + x1 * size, y: cy + y1 * size });
+  }
+  return pts;
+}
+
+function drawD3(now) {
+  const W = d3.width;
+  const H = d3.height;
+  d3c.clearRect(0, 0, W, H);
+  const { cycle, sep, flash } = dimCycle(now, 2.6);
+  const c = { x: W / 2, y: H / 2 };
+  const pts = cubePoints(c.x, c.y, 34, now / 1600, 0.45 + Math.sin(now / 2300) * 0.12);
+  const th = cycleRand(cycle, 13) * Math.PI;
+  const dir = { x: Math.cos(th), y: Math.sin(th) };
+  const n = { x: -dir.y, y: dir.x };
+  const k = sep * 12;
+
+  const drawCube = () => {
+    d3c.strokeStyle = '#f5a623';
+    d3c.lineWidth = 2;
+    d3c.beginPath();
+    for (const [i, j] of CUBE_EDGES) {
+      d3c.moveTo(pts[i].x, pts[i].y);
+      d3c.lineTo(pts[j].x, pts[j].y);
+    }
+    d3c.stroke();
+    d3c.fillStyle = '#fff';
+    for (const p of pts) {
+      d3c.beginPath();
+      d3c.arc(p.x, p.y, 2, 0, Math.PI * 2);
+      d3c.fill();
+    }
+  };
+
+  if (k === 0) {
+    drawCube();
+  } else {
+    for (const s of [1, -1]) {
+      // clip to one side of the cutting plane's screen-space line
+      const hp = [
+        { x: c.x - dir.x * 400, y: c.y - dir.y * 400 },
+        { x: c.x + dir.x * 400, y: c.y + dir.y * 400 },
+        { x: c.x + dir.x * 400 + n.x * s * 400, y: c.y + dir.y * 400 + n.y * s * 400 },
+        { x: c.x - dir.x * 400 + n.x * s * 400, y: c.y - dir.y * 400 + n.y * s * 400 },
+      ];
+      d3c.save();
+      tracePath(d3c, hp);
+      d3c.clip();
+      d3c.translate(n.x * k * s, n.y * k * s);
+      drawCube();
+      d3c.restore();
+    }
+  }
+  if (flash > 0) {
+    d3c.save();
+    d3c.globalAlpha = flash;
+    d3c.strokeStyle = '#fff';
+    d3c.lineWidth = 2;
+    d3c.beginPath();
+    d3c.moveTo(c.x - dir.x * 60, c.y - dir.y * 60);
+    d3c.lineTo(c.x + dir.x * 60, c.y + dir.y * 60);
+    d3c.stroke();
+    d3c.restore();
+  }
+}
+
 // --- the title: awkward pixel letters that get sliced every so often ---
 // Each letter is built on the same 24×24 grid as the food sprites and run
 // through the same roughenSprite pass, so the glyphs come out hand-cut and
 // a little different every time they rebuild.
 
 const tc = document.getElementById('titleCanvas');
-const tcc = tc.getContext('2d');
+const tcc = tc ? tc.getContext('2d') : null;
 const TITLE_CZ = 4; // screen px per grid cell
 
 const LETTER_COLORS = ['#e94560', '#f5a623', '#8fbf58', '#5f85db', '#ee87b2', '#f4d03f'];
@@ -384,7 +626,7 @@ function buildLetterBase(ch, color) {
 }
 
 const titleLetters = [];
-{
+if (tc) {
   let pen = 8;
   let ci = 0;
   for (const ch of 'SHAPE CUTTER') {
@@ -564,6 +806,7 @@ function sliceCard(card, page, a, b) {
   const len = Math.hypot(b.x - a.x, b.y - a.y);
   const n = { x: -(b.y - a.y) / len, y: (b.x - a.x) / len };
 
+  const clones = [];
   [p1, p2].forEach((piece, i) => {
     const clone = card.cloneNode(true);
     // cloned canvases are blank — copy the live preview bitmaps over
@@ -589,6 +832,7 @@ function sliceCard(card, page, a, b) {
       transition: 'transform 0.5s cubic-bezier(0.2, 0.7, 0.3, 1), opacity 0.5s ease',
     });
     document.body.appendChild(clone);
+    clones.push(clone);
     const s = i === 0 ? 1 : -1;
     requestAnimationFrame(() => {
       clone.style.transform = `translate(${n.x * 190 * s}px, ${n.y * 190 * s}px) rotate(${s * 7}deg)`;
@@ -601,6 +845,17 @@ function sliceCard(card, page, a, b) {
   // flash only along the card, not across the whole page
   const span = lineSpanThroughRect(rectPoly, a, b);
   if (span) cutFlash = { a: span[0], b: span[1], start: performance.now() };
+
+  // a "coming soon" card can be sliced for fun, but it rebuilds instead of
+  // opening anything
+  if (card.dataset.soon) {
+    flashHint(card);
+    setTimeout(() => {
+      clones.forEach((cl) => cl.remove());
+      card.style.visibility = '';
+    }, 750);
+    return;
+  }
 
   // then the whole screen closes like a shutter along the same cut line,
   // in this mode's accent color, and we enter through it
@@ -717,18 +972,24 @@ function drawOverlay(now) {
 
 if (REDUCED) {
   // static frame of each preview, no motion
-  drawTitle(performance.now());
-  drawShapesPreview(slice.start + 500);
-  drawFoodPreview(dish.start + 1000);
+  if (tc) drawTitle(performance.now());
+  if (sp) drawShapesPreview(slice.start + 500);
+  if (fp) drawFoodPreview(dish.start + 1000);
+  if (d1) drawD1(dimStart + 500);
+  if (d2) drawD2(dimStart + 500);
+  if (d3) drawD3(dimStart + 500);
 } else {
   let last = performance.now();
   function tick(now) {
     const dt = Math.min((now - last) / 1000, 0.05);
     last = now;
     drawBackground(now, dt);
-    drawTitle(now);
-    drawShapesPreview(now);
-    drawFoodPreview(now);
+    if (tc) drawTitle(now);
+    if (sp) drawShapesPreview(now);
+    if (fp) drawFoodPreview(now);
+    if (d1) drawD1(now);
+    if (d2) drawD2(now);
+    if (d3) drawD3(now);
     drawOverlay(now);
     requestAnimationFrame(tick);
   }
