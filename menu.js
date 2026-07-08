@@ -399,8 +399,8 @@ function drawAmbient() {
 // --- the perimeter path (rounded rectangle, walked clockwise) ---
 
 function perimeterInfo() {
-  const M = 50;
-  const r = 44;
+  const M = 2; // feet hug the very window edge (top = "bookmark bar" line)
+  const r = 38;
   const left = M;
   const top = M;
   const right = Math.max(M + 2 * r + 20, innerWidth - M);
@@ -455,15 +455,14 @@ function pathPoint(info, s) {
 
 // --- characters ---
 
-const WALK = 60;
-const SNEAK = 46;
-const RUN = 216;
-const HUNT = 206;
+const WALK = 62;
+const PROWL = 74; // the knife stalks a bit faster than the food strolls
+const RUN = 170; // the fleeing food
+const HUNT = 214; // the knife — a touch faster, so it eventually catches
 
 const runner = {
-  kind: 'avocado',
   sc: 1.32,
-  headDist: 78,
+  food: null, // a random food critter, replaced each time it gets sliced
   s: 0,
   dir: 1,
   speed: 0,
@@ -473,9 +472,7 @@ const runner = {
   emote: null,
 };
 const chaser = {
-  kind: 'knife',
   sc: 0.95,
-  headDist: 80,
   s: 0,
   dir: 1,
   speed: 0,
@@ -498,6 +495,8 @@ function shortSigned(a, b, P) {
   return d;
 }
 
+// Wandering keeps a direction for long stretches and rarely reverses, so the
+// two characters travel most of the perimeter and cross paths often.
 function wander(ch, now, opts) {
   if (now < ch.timer) return;
   if (Math.random() < opts.pauseChance) {
@@ -505,101 +504,189 @@ function wander(ch, now, opts) {
     ch.timer = now + opts.pauseMin + Math.random() * opts.pauseVar;
     const act = cwPick(opts.idles);
     if (act === 'sleep') setEmote(ch, 'z', now, (ch.timer - now) / 1000);
-    else if (act === 'look') {
-      ch.dir *= -1; // glance/turn the other way
-      setEmote(ch, '?', now, 0.7);
-    }
+    else if (act === 'look') setEmote(ch, '?', now, 0.7);
   } else {
     ch.speed = opts.walk;
-    ch.dir = Math.random() < 0.5 ? 1 : -1;
+    if (opts.seekChance && opts.seekDir && Math.random() < opts.seekChance) {
+      ch.dir = opts.seekDir; // stalk toward the target
+    } else if (Math.random() < opts.flipChance) {
+      ch.dir *= -1; // otherwise usually keep going
+    }
     ch.timer = now + opts.moveMin + Math.random() * opts.moveVar;
   }
 }
 
-let lastBump = 0;
+// which side of the window (0 top, 1 right, 2 bottom, 3 left) a point is on;
+// corner arcs count as the side they lead into
+function edgeIndex(info, s) {
+  s = ((s % info.P) + info.P) % info.P;
+  const sideByPiece = [0, 1, 1, 2, 2, 3, 3, 0];
+  for (let i = 0; i < info.pieces.length; i++) {
+    const pc = info.pieces[i];
+    if (s <= pc.s0 + pc.len || i === info.pieces.length - 1) return sideByPiece[i];
+  }
+  return 0;
+}
+
+// A random food turned into a "critter": its silhouette polygon and cells in
+// a shared local frame (feet at y=0, body above), so it can be drawn and, when
+// caught, split by the real engine.
+function newRunnerFood() {
+  const sprite = roughenSprite(buildSprite(FOODS[Math.floor(Math.random() * FOODS.length)]));
+  const sp = 1.9;
+  const legGap = 6;
+  let minX = 1e9;
+  let maxX = -1e9;
+  let minY = 1e9;
+  let maxY = -1e9;
+  for (const p of sprite.polygon) {
+    minX = Math.min(minX, p.x);
+    maxX = Math.max(maxX, p.x);
+    minY = Math.min(minY, p.y);
+    maxY = Math.max(maxY, p.y);
+  }
+  const ox = -((minX + maxX) / 2) * sp; // center horizontally
+  const oy = -legGap - maxY * sp; // seat the body just above the feet
+  return {
+    cells: sprite.cells,
+    sp,
+    ox,
+    oy,
+    polyLocal: sprite.polygon.map((p) => ({ x: ox + p.x * sp, y: oy + p.y * sp })),
+    topY: oy + minY * sp,
+    legX: Math.max(4, (maxX - minX) * sp * 0.22),
+  };
+}
+
+let sliceFx = null;
+
+function sliceRunner(info, now) {
+  const { pos, tangent, outward } = pathPoint(info, runner.s);
+  const food = runner.food;
+  const [p1, p2] = splitPolygon(food.polyLocal, { x: 0, y: -999 }, { x: 0, y: 999 });
+  sliceFx = {
+    pos,
+    tangent,
+    outward,
+    dir: runner.dir,
+    sc: runner.sc,
+    food,
+    pieces: p1.length >= 3 && p2.length >= 3 ? [p1, p2] : [food.polyLocal],
+    start: now,
+  };
+  runner.state = 'sliced';
+  runner.speed = 0;
+  runner.emote = null;
+  runner.respawnAt = now + 850;
+  chaser.state = 'gloat';
+  chaser.speed = 0;
+  chaser.gloatUntil = now + 700;
+  setEmote(chaser, ':)', now, 1.3);
+}
+
+function respawnRunner(info, now) {
+  runner.food = newRunnerFood();
+  // crawl out on the far side of the loop from the knife
+  runner.s = (((chaser.s + info.P * 0.5 + (Math.random() - 0.5) * info.P * 0.2) % info.P) + info.P) % info.P;
+  runner.dir = Math.random() < 0.5 ? 1 : -1;
+  runner.speed = 0;
+  runner.state = 'spawn';
+  runner.spawnStart = now;
+  runner.spawnUntil = now + 650;
+  setEmote(runner, '?', now, 0.9);
+}
 
 function updateChase(info, now, dt) {
   const P = info.P;
   const gap = shortSigned(chaser.s, runner.s, P); // + means runner is CW-ahead
   const absGap = Math.abs(gap);
-  // the knife sneaks fairly close before the avocado bolts, so encounters
-  // are tense and they genuinely cross paths
-  const RUN_SIGHT = Math.min(220, P * 0.22);
-  const CHASE_SIGHT = Math.min(300, P * 0.3);
-  const LOSE = Math.min(420, P * 0.42);
+  const SIGHT = Math.min(320, P * 0.24);
+  const LOSE = Math.min(620, P * 0.55);
+  const CATCH = 20;
+  const sameEdge = edgeIndex(info, runner.s) === edgeIndex(info, chaser.s);
 
-  // collision: when they meet, the avocado jukes past and the knife is
-  // briefly stunned — so they actually run into each other
-  if (absGap < 28 && now - lastBump > 1100) {
-    lastBump = now;
-    runner.state = 'flee';
-    runner.dir = -runner.dir; // slip past in the other direction
-    runner.speed = RUN * 1.3;
-    runner.burstUntil = now + 500;
-    setEmote(runner, '!!', now, 0.9);
-    chaser.stunUntil = now + 480;
+  // knife gloating over a fresh slice
+  if (chaser.state === 'gloat') {
     chaser.speed = 0;
-    setEmote(chaser, 'x', now, 0.7);
+    if (now >= chaser.gloatUntil) {
+      chaser.state = 'prowl';
+      chaser.timer = now;
+    }
   }
 
-  const runnerBursting = now < (runner.burstUntil || 0);
-  const chaserStunned = now < (chaser.stunUntil || 0);
-
-  // avocado: flee if the knife is within sight, else stroll and dawdle
-  if (runnerBursting) {
-    runner.speed = RUN * 1.3;
-  } else if (absGap < RUN_SIGHT) {
+  if (runner.state === 'sliced') {
+    runner.speed = 0;
+    if (now >= runner.respawnAt) respawnRunner(info, now);
+  } else if (runner.state === 'spawn') {
+    runner.speed = 0;
+    if (now >= runner.spawnUntil) {
+      runner.state = 'stroll';
+      runner.timer = now;
+    }
+  } else if (
+    // the knife is on the same edge (or already chasing and still near) → bolt
+    (sameEdge || absGap < SIGHT || (runner.state === 'flee' && absGap < LOSE)) &&
+    chaser.state !== 'gloat'
+  ) {
     if (runner.state !== 'flee') {
       runner.state = 'flee';
-      setEmote(runner, absGap < 120 ? '!!' : '!', now, 1.0);
+      setEmote(runner, '!', now, 1.2);
     }
-    runner.dir = gap >= 0 ? 1 : -1; // run so the knife stays behind
-    // occasional stumble lets the knife close in for a collision
-    if (runner.stumbleUntil && now < runner.stumbleUntil) runner.speed = 34;
-    else {
-      runner.speed = absGap < 90 ? RUN * 1.1 : RUN;
-      if (Math.random() < 0.004) runner.stumbleUntil = now + 260;
+    runner.dir = gap >= 0 ? 1 : -1; // keep the knife behind
+    runner.speed = RUN;
+    if (absGap < CATCH) sliceRunner(info, now);
+  } else {
+    if (runner.state === 'flee') {
+      runner.state = 'stroll';
+      runner.timer = now;
+      setEmote(runner, '~', now, 1.0);
     }
-  } else if (runner.state === 'flee' && absGap > RUN_SIGHT + 80) {
-    runner.state = 'stroll';
-    runner.timer = now;
-    setEmote(runner, '~', now, 0.9);
-  }
-  if (runner.state === 'stroll') {
-    wander(runner, now, {
-      pauseChance: 0.4,
-      pauseMin: 500,
-      pauseVar: 1500,
-      moveMin: 900,
-      moveVar: 1800,
-      walk: WALK,
-      idles: ['idle', 'look', 'sleep'],
-    });
+    if (runner.state === 'stroll') {
+      wander(runner, now, {
+        pauseChance: 0.35,
+        pauseMin: 600,
+        pauseVar: 1300,
+        moveMin: 1100,
+        moveVar: 1600,
+        walk: WALK,
+        flipChance: 0.3,
+        idles: ['idle', 'look', 'sleep'],
+      });
+    }
   }
 
-  // knife: hunt if the avocado is in sight, else prowl
-  if (chaserStunned) {
-    chaser.speed = 0;
-  } else if (absGap < CHASE_SIGHT) {
+  // knife: hunt while the food shares its edge or it's mid-chase; the hunt
+  // persists across corners (up to LOSE) so it doesn't give up at every turn
+  const huntPersist = chaser.state === 'hunt' && absGap < LOSE;
+  const canHunt =
+    chaser.state !== 'gloat' &&
+    runner.state !== 'sliced' &&
+    runner.state !== 'spawn' &&
+    (sameEdge || absGap < SIGHT || huntPersist);
+  if (canHunt) {
     if (chaser.state !== 'hunt') {
       chaser.state = 'hunt';
-      setEmote(chaser, '!', now, 1.0);
+      setEmote(chaser, '!', now, 1.2);
     }
-    chaser.dir = gap >= 0 ? 1 : -1; // close the gap the short way
-    chaser.speed = absGap < 95 ? HUNT * 1.32 : HUNT; // lunge when near
-  } else if (chaser.state === 'hunt' && absGap > LOSE) {
+    chaser.dir = gap >= 0 ? 1 : -1;
+    chaser.speed = absGap < 180 ? HUNT * 1.35 : HUNT; // lunge when closing in
+  } else if (chaser.state === 'hunt') {
     chaser.state = 'prowl';
     chaser.timer = now;
     setEmote(chaser, '?', now, 1.0);
   }
-  if (!chaserStunned && chaser.state === 'prowl') {
+  if (chaser.state === 'prowl') {
+    // stalk: usually drift toward the food, so encounters keep happening
     wander(chaser, now, {
-      pauseChance: 0.5,
-      pauseMin: 600,
-      pauseVar: 1600,
-      moveMin: 1000,
-      moveVar: 1600,
-      walk: SNEAK,
+      pauseChance: 0.1,
+      pauseMin: 300,
+      pauseVar: 600,
+      moveMin: 1300,
+      moveVar: 1800,
+      walk: PROWL,
+      flipChance: 0.15,
+      seekChance: 0.85,
+      seekDir: Math.sign(gap) || 1,
       idles: ['idle', 'look'],
     });
   }
@@ -611,37 +698,83 @@ function updateChase(info, now, dt) {
 }
 
 function drawChase(info, now) {
+  drawSliceFx(now);
   for (const ch of [chaser, runner]) {
+    if (ch === runner && runner.state === 'sliced') continue;
     const { pos, tangent, outward } = pathPoint(info, ch.s);
     bgc.save();
     bgc.globalAlpha = 1;
     bgc.translate(pos.x, pos.y);
     // local +x → facing (travel dir), local +y → outward (toward the wall)
     bgc.transform(tangent.x * ch.dir, tangent.y * ch.dir, outward.x, outward.y, 0, 0);
-    bgc.scale(ch.sc, ch.sc);
-    if (ch.kind === 'avocado') drawAvocado(ch, now);
-    else drawKnife(ch, now);
-    bgc.restore();
-
-    if (ch.emote && now < ch.emote.until) {
-      const hx = pos.x - outward.x * ch.headDist;
-      const hy = pos.y - outward.y * ch.headDist;
-      drawEmote(hx, hy, ch.emote.char);
+    let extra = 1;
+    if (ch === runner && runner.state === 'spawn') {
+      extra = easeOut(Math.min((now - runner.spawnStart) / 650, 1)); // crawl out
     }
+    bgc.scale(ch.sc * extra, ch.sc * extra);
+    if (ch === runner) drawFoodCritter(runner.food, ch, now);
+    else drawKnife(ch, now);
+    // emote lives in the sprite's own frame, so it tips/flips with the sprite
+    if (ch.emote && now < ch.emote.until && ch.emote.char) {
+      const ey = ch === runner ? runner.food.topY - 9 : -80;
+      drawEmoteLocal(ch.emote.char, 0, ey);
+    }
+    bgc.restore();
   }
 }
 
-function drawEmote(x, y, char) {
-  bgc.save();
-  bgc.globalAlpha = 1;
+function drawEmoteLocal(char, x, y) {
   bgc.font = "700 20px 'Pixelify Sans', monospace";
   bgc.textAlign = 'center';
   bgc.textBaseline = 'middle';
-  bgc.lineWidth = 5;
+  bgc.lineWidth = 4;
   bgc.strokeStyle = '#16213e';
   bgc.strokeText(char, x, y);
   bgc.fillStyle = char === 'z' ? '#9fb4e0' : '#ffd84a';
   bgc.fillText(char, x, y);
+}
+
+function drawFoodCritter(food, ch, now) {
+  const moving = ch.speed > 1;
+  const running = ch.speed > 120;
+  const stride = running ? 8 : moving ? 4.5 : 0;
+  const bob = moving ? -Math.abs(Math.sin(ch.phase)) * (running ? 2.6 : 1.2) : Math.sin(now / 650) * 0.7;
+  drawLegs(-6, -food.legX, food.legX, ch.phase, stride, '#7a5a34', '#4a3520');
+  bgc.save();
+  bgc.translate(0, bob);
+  drawCellsAt(bgc, food.cells, food.ox, food.oy, food.sp);
+  bgc.restore();
+}
+
+// the two halves of a freshly-sliced food flying apart and fading
+function drawSliceFx(now) {
+  if (!sliceFx) return;
+  const t = (now - sliceFx.start) / 1000;
+  if (t > 0.9) {
+    sliceFx = null;
+    return;
+  }
+  const fade = Math.min(1, (0.9 - t) / 0.45);
+  const k = easeOut(Math.min(t / 0.5, 1)) * 24;
+  const food = sliceFx.food;
+  bgc.save();
+  bgc.globalAlpha = fade;
+  bgc.translate(sliceFx.pos.x, sliceFx.pos.y);
+  bgc.transform(sliceFx.tangent.x * sliceFx.dir, sliceFx.tangent.y * sliceFx.dir, sliceFx.outward.x, sliceFx.outward.y, 0, 0);
+  bgc.scale(sliceFx.sc, sliceFx.sc);
+  sliceFx.pieces.forEach((piece, i) => {
+    const s = i === 0 ? 1 : -1;
+    bgc.save();
+    bgc.translate(s * k, -k * 0.45);
+    bgc.rotate(s * 0.5 * easeOut(Math.min(t / 0.5, 1)));
+    bgc.beginPath();
+    bgc.moveTo(piece[0].x, piece[0].y);
+    for (let j = 1; j < piece.length; j++) bgc.lineTo(piece[j].x, piece[j].y);
+    bgc.closePath();
+    bgc.clip();
+    drawCellsAt(bgc, food.cells, food.ox, food.oy, food.sp);
+    bgc.restore();
+  });
   bgc.restore();
 }
 
@@ -663,87 +796,6 @@ function drawLegs(hipY, xL, xR, phase, stride, legColor, footColor) {
     bgc.fillStyle = footColor;
     bgc.fillRect(fx - 2, fy - 1.5, 6, 3);
   }
-}
-
-function drawBitmap(map, colmap, sp, x0, y0) {
-  for (let r = 0; r < map.length; r++) {
-    const row = map[r];
-    for (let c = 0; c < row.length; c++) {
-      const ch = row[c];
-      if (ch === '.' || ch === ' ') continue;
-      const col = colmap[ch];
-      if (!col) continue;
-      bgc.fillStyle = col;
-      bgc.fillRect(x0 + c * sp, y0 + r * sp, sp + 0.5, sp + 0.5);
-    }
-  }
-}
-
-// a halved avocado (skin ring, flesh, pit) with highlight shading — no face
-const AVO = [
-  '....DDDDD....',
-  '..DDGGGGGDD..',
-  '.DGGGGGGGGGD.',
-  '.DGLLLLLLLGD.',
-  'DGLLLLLLLLLGD',
-  'DGLLLFFFLLLGD',
-  'DGLLFPPPPFLGD',
-  'DGLLFPQQPFLGD',
-  'DGLLFPPPPFLGD',
-  'DGLLLFFFLLLGD',
-  'DGLLLLLLLLLGD',
-  '.DGLLLLLLLGD.',
-  '.DGGGGGGGGGD.',
-  '..DDGGGGGDD..',
-  '....DDDDD....',
-];
-const AVOCOL = {
-  D: '#356028',
-  G: '#5c9440',
-  L: '#c6d98a',
-  F: '#dde9ad',
-  P: '#9c6b43',
-  Q: '#c0895a',
-};
-const AVO_SP = 3.0;
-const AVO_W = AVO[0].length * AVO_SP;
-const AVO_H = AVO.length * AVO_SP;
-
-function drawAvocado(ch, now) {
-  const moving = ch.speed > 1;
-  const running = ch.speed > 120;
-  const stride = running ? 8 : moving ? 4.5 : 0;
-  const bob = moving ? -Math.abs(Math.sin(ch.phase)) * (running ? 2.6 : 1.2) : Math.sin(now / 650) * 0.7;
-
-  drawLegs(-7, -5, 5, ch.phase, stride, '#3f6b2c', '#2f5220');
-
-  bgc.save();
-  bgc.translate(0, bob);
-  const bodyTop = -7 - AVO_H;
-  const midY = bodyTop + AVO_H * 0.5;
-
-  // arms
-  const armSwing = moving ? Math.sin(ch.phase + Math.PI) * (running ? 7 : 3) : Math.sin(now / 650) * 1.2;
-  bgc.strokeStyle = '#3f6b2c';
-  bgc.lineWidth = 3.4;
-  bgc.lineCap = 'round';
-  bgc.beginPath();
-  bgc.moveTo(AVO_W * 0.34, midY);
-  bgc.lineTo(AVO_W * 0.34 + armSwing, midY + 8);
-  bgc.moveTo(-AVO_W * 0.34, midY);
-  bgc.lineTo(-AVO_W * 0.34 - armSwing, midY + 8);
-  bgc.stroke();
-
-  drawBitmap(AVO, AVOCOL, AVO_SP, -AVO_W / 2, bodyTop);
-
-  // soft specular shine on the skin
-  bgc.globalAlpha = 0.16;
-  bgc.fillStyle = '#ffffff';
-  bgc.beginPath();
-  bgc.ellipse(-AVO_W * 0.18, bodyTop + AVO_H * 0.26, AVO_W * 0.15, AVO_H * 0.1, -0.5, 0, Math.PI * 2);
-  bgc.fill();
-  bgc.globalAlpha = 1;
-  bgc.restore();
 }
 
 function drawKnife(ch, now) {
@@ -1654,8 +1706,9 @@ function drawOverlay(now) {
 // --- drive it ---
 
 if (LANDING) {
-  // start the avocado and knife well apart on the perimeter
+  // start the food and knife well apart on the perimeter
   const info0 = perimeterInfo();
+  runner.food = newRunnerFood();
   runner.s = info0.P * 0.2;
   chaser.s = info0.P * 0.52;
 }
