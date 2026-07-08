@@ -194,7 +194,6 @@ function centroidOf(pts) {
 // --- game state ---
 
 let state = 'aim'; // aim → reveal → … → over
-let uiMode = 'rotate'; // 'rotate' | 'slice'
 let round = 1;
 let total = 0;
 let target = makeTarget3D();
@@ -208,7 +207,8 @@ let message = '';
 let swipe = null;
 let orbit = null;
 let revealDrag = null;
-let chipRect = { x: 0, y: 0, w: 0, h: 0 };
+const activePointers = new Map(); // for two-finger-touch rotation
+let primaryId = null;
 
 function buildWholePolys() {
   wholePolys =
@@ -224,7 +224,6 @@ function startRound() {
   swipe = null;
   cutPlane = null;
   state = 'aim';
-  uiMode = 'rotate';
   message = `Round ${round}/${ROUNDS} — slice it in half!`;
 }
 
@@ -291,22 +290,12 @@ function attemptCut() {
 
 // --- drawing ---
 
-function drawChip() {
+function drawHint() {
   const label =
-    state !== 'aim'
-      ? 'drag to spin the pieces'
-      : uiMode === 'rotate'
-        ? 'ROTATE mode — tap here to SLICE'
-        : 'SLICE mode — tap here to ROTATE';
-  const w = 340;
-  chipRect = { x: canvas.width / 2 - w / 2, y: canvas.height - 56, w, h: 38 };
-  ctx.fillStyle = state === 'aim' && uiMode === 'slice' ? 'rgba(120, 32, 48, 0.85)' : 'rgba(15, 52, 96, 0.8)';
-  ctx.strokeStyle = state === 'aim' && uiMode === 'slice' ? '#e94560' : '#3a3f5c';
-  ctx.beginPath();
-  ctx.roundRect(chipRect.x, chipRect.y, chipRect.w, chipRect.h, 8);
-  ctx.fill();
-  ctx.stroke();
-  drawLabel(label, canvas.width / 2, chipRect.y + 25, 15);
+    state === 'aim'
+      ? 'hold left click and drag to slice — both mouse buttons, two fingers, or scroll to rotate'
+      : 'drag to spin the pieces';
+  drawLabel(label, canvas.width / 2, canvas.height - 24, 14, '#aabbcc');
 }
 
 function drawReveal(t) {
@@ -418,17 +407,22 @@ function draw(now) {
       return;
     }
   }
-  drawChip();
+  drawHint();
 }
 
 // --- input ---
 
-const inChip = (p) =>
-  p.x >= chipRect.x && p.x <= chipRect.x + chipRect.w && p.y >= chipRect.y && p.y <= chipRect.y + chipRect.h;
+// Left-drag slices. Rotation: hold both mouse buttons (or right-drag, which
+// is what a trackpad two-finger press reports), put a second finger down, or
+// two-finger scroll. Pressing the second button mid-swipe converts it into a
+// rotation instead of a cut.
+
+canvas.addEventListener('contextmenu', (event) => event.preventDefault());
 
 canvas.addEventListener('pointerdown', (event) => {
   event.preventDefault();
   const p = { x: event.clientX, y: event.clientY };
+  activePointers.set(event.pointerId, p);
 
   if (state === 'over') {
     round = 1;
@@ -436,22 +430,32 @@ canvas.addEventListener('pointerdown', (event) => {
     startRound();
     return;
   }
-  if (state === 'aim' && inChip(p)) {
-    uiMode = uiMode === 'rotate' ? 'slice' : 'rotate';
-    message =
-      uiMode === 'slice' ? 'drag a line across the object' : `Round ${round}/${ROUNDS} — slice it in half!`;
+  canvas.setPointerCapture(event.pointerId);
+
+  // a second touch pointer arriving mid-gesture forces rotation
+  if (activePointers.size >= 2 && primaryId !== null) {
+    if (state === 'aim') {
+      swipe = null;
+      if (!orbit) orbit = { x: p.x, y: p.y };
+    }
     return;
   }
-  canvas.setPointerCapture(event.pointerId);
+  primaryId = event.pointerId;
+
   if (state === 'reveal') {
     revealDrag = { x: p.x, y: p.y, moved: false };
     return;
   }
-  if (uiMode === 'rotate') orbit = { x: p.x, y: p.y };
-  else swipe = { a: p, b: p };
+  if (state !== 'aim') return;
+  if ((event.buttons & 2) !== 0 || activePointers.size >= 2) {
+    orbit = { x: p.x, y: p.y };
+  } else {
+    swipe = { a: p, b: p };
+  }
 });
 
 canvas.addEventListener('pointermove', (event) => {
+  if (event.pointerId !== primaryId) return;
   const p = { x: event.clientX, y: event.clientY };
   const spin = (from) => {
     yaw += (p.x - from.x) * 0.008;
@@ -465,11 +469,21 @@ canvas.addEventListener('pointermove', (event) => {
     return;
   }
   if (state !== 'aim') return;
+
+  // the right button (or a second finger) joined mid-swipe → rotate instead
+  if (swipe && ((event.buttons & 2) !== 0 || activePointers.size >= 2)) {
+    orbit = { x: p.x, y: p.y };
+    swipe = null;
+  }
   if (orbit) spin(orbit);
   else if (swipe) swipe.b = p;
 });
 
-canvas.addEventListener('pointerup', () => {
+canvas.addEventListener('pointerup', (event) => {
+  activePointers.delete(event.pointerId);
+  if (event.pointerId !== primaryId) return;
+  primaryId = null;
+
   if (state === 'reveal' && revealDrag) {
     const wasTap = !revealDrag.moved;
     revealDrag = null;
@@ -494,11 +508,27 @@ canvas.addEventListener('pointerup', () => {
   }
 });
 
-window.addEventListener('keydown', (event) => {
-  if (event.key.toLowerCase() === 'c' && state === 'aim') {
-    uiMode = uiMode === 'rotate' ? 'slice' : 'rotate';
+canvas.addEventListener('pointercancel', (event) => {
+  activePointers.delete(event.pointerId);
+  if (event.pointerId === primaryId) {
+    primaryId = null;
+    orbit = null;
+    swipe = null;
+    revealDrag = null;
   }
 });
+
+// trackpad two-finger scroll orbits directly
+canvas.addEventListener(
+  'wheel',
+  (event) => {
+    event.preventDefault();
+    if (state === 'over') return;
+    yaw += event.deltaX * 0.004;
+    pitch = Math.max(-1.4, Math.min(1.4, pitch + event.deltaY * 0.004));
+  },
+  { passive: false }
+);
 
 let lastFrame = performance.now();
 function frame(now) {
