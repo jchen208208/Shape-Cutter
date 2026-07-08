@@ -181,6 +181,38 @@ for (const food of FOODS) {
   }
 }
 
+// --- 1D strings: cuts must conserve arc length, and queries must behave ---
+const { buildString, nearestOnPolyline, polylineSwipeCut, cutPolyline } = require('./strings.js');
+
+{
+  let worst1d = 0;
+  let pieces1dOk = true;
+  for (let i = 0; i < 300; i++) {
+    const s = buildString(400, 300);
+    const index = Math.floor(Math.random() * (s.pts.length - 1));
+    const t = Math.random();
+    const c = cutPolyline(s.pts, s.cum, index, t);
+    worst1d = Math.max(worst1d, Math.abs(c.len1 + c.len2 - s.total));
+    if (c.p1.length < 2 || c.p2.length < 2) pieces1dOk = false;
+  }
+  assertClose(worst1d, 0, '300 random string cuts conserve length (worst error)', 1e-6);
+  assertClose(pieces1dOk ? 1 : 0, 1, 'every string cut yields two drawable pieces');
+
+  // a swipe far away from the string never cuts
+  const s = buildString(400, 300);
+  const miss = polylineSwipeCut(s.pts, { x: 5000, y: 5000 }, { x: 5010, y: 5010 });
+  assertClose(miss === null ? 1 : 0, 1, 'far-away swipe misses the string');
+
+  // the string's endpoints sit on opposite sides of the origin, so at least
+  // one of a vertical or horizontal swipe through center must cross it
+  const hit =
+    polylineSwipeCut(s.pts, { x: 0, y: -1000 }, { x: 0, y: 1000 }) ||
+    polylineSwipeCut(s.pts, { x: -1000, y: 0 }, { x: 1000, y: 0 });
+  assertClose(hit ? 1 : 0, 1, 'center cross-swipe hits the string');
+  const near = nearestOnPolyline(s.pts, s.pts[Math.floor(s.pts.length / 2)]);
+  assertClose(near.dist, 0, 'nearest point to an on-string point is itself', 1e-9);
+}
+
 if (failures) {
   console.error(`\n${failures} test(s) FAILED`);
   process.exit(1);
