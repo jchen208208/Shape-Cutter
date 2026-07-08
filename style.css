@@ -7,6 +7,12 @@ body {
   color: #eee;
   margin: 0;
   min-height: 100vh;
+  animation: pagefade 0.4s ease-out;
+}
+@keyframes pagefade {
+  from {
+    opacity: 0;
+  }
 }
 #game {
   position: fixed;
@@ -49,16 +55,12 @@ button {
 }
 .title {
   margin: 12vh 0 0;
-  font-family: 'Pixelify Sans', monospace;
-  font-size: clamp(44px, 9vw, 80px);
-  font-weight: 600;
-  letter-spacing: 1px;
-  background: linear-gradient(100deg, #e94560 20%, #f5a623 50%, #e94560 80%);
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: rise 0.7s ease-out both, shimmer 6s linear infinite;
+  line-height: 0;
+  animation: rise 0.7s ease-out both;
+}
+.title canvas {
+  max-width: min(92vw, 860px);
+  image-rendering: pixelated;
 }
 .slice-line {
   width: 0;
@@ -70,10 +72,15 @@ button {
   animation: slice 0.6s 0.5s ease-out forwards;
 }
 .tagline {
-  color: #99a;
-  font-size: 18px;
+  font-family: 'Pixelify Sans', monospace;
+  font-size: 17px;
+  letter-spacing: 0.5px;
+  color: #aab3d0;
   margin: 18px 0 0;
   animation: rise 0.7s 0.2s ease-out both;
+}
+.tagline-accent {
+  color: #e94560;
 }
 .menu {
   display: flex;
@@ -91,10 +98,11 @@ button {
   gap: 5px;
   padding: 26px 30px 20px;
   background: linear-gradient(160deg, #1f2a4e 0%, #131c38 100%);
-  border: 2px dashed color-mix(in srgb, var(--accent) 55%, transparent);
+  border: 2px solid color-mix(in srgb, var(--accent) 45%, #2a3358);
   border-radius: 6px;
   color: #fff;
   text-decoration: none;
+  cursor: crosshair;
   transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
   animation: rise 0.7s 0.35s ease-out both;
 }
@@ -104,17 +112,25 @@ button {
 .mode:nth-child(2) {
   animation-delay: 0.5s;
 }
-/* scissors riding the dashed "cut here" border */
-.mode::before {
-  content: '\2702';
+/* target-bracket corners: this card is something you cut */
+.mode::before,
+.mode::after {
+  content: '';
   position: absolute;
-  top: -16px;
-  left: 20px;
-  font-size: 20px;
-  transform: rotate(90deg);
-  color: #ccd;
-  background: #1a1a2e;
-  padding: 0 4px;
+  width: 16px;
+  height: 16px;
+}
+.mode::before {
+  top: -7px;
+  left: -7px;
+  border-top: 4px solid var(--accent);
+  border-left: 4px solid var(--accent);
+}
+.mode::after {
+  bottom: -7px;
+  right: -7px;
+  border-bottom: 4px solid var(--accent);
+  border-right: 4px solid var(--accent);
 }
 .mode:hover {
   transform: translateY(-8px) scale(1.03);
@@ -123,14 +139,10 @@ button {
   box-shadow: 0 12px 40px color-mix(in srgb, var(--accent) 28%, transparent),
     inset 0 0 30px color-mix(in srgb, var(--accent) 10%, transparent);
 }
-.mode:hover::before {
-  animation: snip 0.5s ease-in-out infinite;
-}
 .mode canvas {
   border-radius: 4px;
   background: #10182e;
   touch-action: none;
-  cursor: crosshair;
 }
 .mode-name {
   font-family: 'Pixelify Sans', monospace;
@@ -151,20 +163,73 @@ button {
   opacity: 0.65;
   transition: opacity 0.2s ease;
 }
-.mode.hint-flash {
-  animation: cardshake 0.4s ease;
-}
 .mode.hint-flash .mode-hint {
   opacity: 1;
 }
-@keyframes snip {
+.how {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 38px;
+  font-family: 'Pixelify Sans', monospace;
+  font-size: 15px;
+  color: #8f97b8;
+  animation: rise 0.7s 0.65s ease-out both;
+  transition: color 0.2s ease;
+}
+.how-demo {
+  position: relative;
+  width: 44px;
+  height: 26px;
+  border: 2px solid #5a617f;
+  border-radius: 4px;
+}
+.how-dot {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #fff;
+  left: -12px;
+  top: 28px;
+  animation: howsweep 2.2s ease-in-out infinite;
+}
+.how.hint-flash {
+  color: #fff;
+}
+.how.hint-flash .how-demo {
+  border-color: #e94560;
+}
+@keyframes howsweep {
   0%,
+  12% {
+    transform: none;
+    opacity: 0;
+  }
+  22% {
+    opacity: 1;
+  }
+  70% {
+    transform: translate(58px, -38px);
+    opacity: 1;
+  }
+  82%,
   100% {
-    transform: rotate(82deg);
+    transform: translate(58px, -38px);
+    opacity: 0;
   }
-  50% {
-    transform: rotate(98deg);
-  }
+}
+.wipe-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  pointer-events: none;
+}
+#fxOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
 }
 @keyframes cardshake {
   0%,
@@ -187,11 +252,6 @@ button {
   to {
     opacity: 1;
     transform: none;
-  }
-}
-@keyframes shimmer {
-  to {
-    background-position: 200% 0;
   }
 }
 @keyframes slice {

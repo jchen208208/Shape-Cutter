@@ -267,52 +267,9 @@ function newSliceScene() {
 }
 
 let slice = newSliceScene();
-const spState = { aim: null, cut: null }; // the player's own slice on the card
-
-function drawAimDash(c, a, b, now) {
-  c.save();
-  c.setLineDash([8, 6]);
-  c.lineDashOffset = -now / 30;
-  c.strokeStyle = 'rgba(255,255,255,0.9)';
-  c.beginPath();
-  c.moveTo(a.x, a.y);
-  c.lineTo(b.x, b.y);
-  c.stroke();
-  c.restore();
-}
 
 function drawShapesPreview(now) {
   spc.clearRect(0, 0, sp.width, sp.height);
-
-  if (spState.cut) {
-    // the player sliced the card: halves fly apart, then we navigate
-    const ct = (now - spState.cut.start) / 1000;
-    const k = easeOut(Math.min(ct / 0.45, 1)) * 14;
-    spState.cut.pieces.forEach((piece, i) => {
-      const s = i === 0 ? 1 : -1;
-      spc.save();
-      spc.translate(spState.cut.normal.x * k * s, spState.cut.normal.y * k * s);
-      tracePath(spc, piece);
-      spc.fillStyle = PIECE_PREVIEW_COLORS[i];
-      spc.fill();
-      spc.strokeStyle = '#fff';
-      spc.stroke();
-      spc.restore();
-    });
-    return;
-  }
-
-  if (spState.aim) {
-    slice.start = now; // hold the demo loop while the player aims
-    tracePath(spc, slice.poly);
-    spc.fillStyle = PIECE_PREVIEW_COLORS[0];
-    spc.fill();
-    spc.strokeStyle = '#fff';
-    spc.stroke();
-    drawAimDash(spc, spState.aim[0], spState.aim[1], now);
-    return;
-  }
-
   const t = (now - slice.start) / 1000;
 
   if (t < 1.0) {
@@ -366,34 +323,9 @@ function newFoodScene() {
 }
 
 let dish = newFoodScene();
-const fpState = { aim: null, cut: null, geom: null };
 
 function drawFoodPreview(now) {
   fpc.clearRect(0, 0, fp.width, fp.height);
-
-  if (fpState.cut) {
-    const g = fpState.geom;
-    const ct = (now - fpState.cut.start) / 1000;
-    const k = easeOut(Math.min(ct / 0.45, 1)) * 14;
-    fpState.cut.pieces.forEach((piece, i) => {
-      const s = i === 0 ? 1 : -1;
-      fpc.save();
-      fpc.translate(fpState.cut.normal.x * k * s, fpState.cut.normal.y * k * s);
-      tracePath(fpc, piece);
-      fpc.clip();
-      drawCellsAt(fpc, dish.sprite.cells, g.x, g.y, g.s);
-      fpc.restore();
-    });
-    return;
-  }
-
-  if (fpState.aim && fpState.geom) {
-    dish.start = now - 1000; // hold the swap cycle (and the bob) while aiming
-    const g = fpState.geom;
-    drawCellsAt(fpc, dish.sprite.cells, g.x, g.y, g.s);
-    drawAimDash(fpc, fpState.aim[0], fpState.aim[1], now);
-    return;
-  }
 
   const t = (now - dish.start) / 1000;
   if (t > 3.2) dish = newFoodScene();
@@ -408,111 +340,381 @@ function drawFoodPreview(now) {
   fpc.globalAlpha = 1;
 }
 
-// --- slice-to-enter: drag a cut across a card's preview to pick that mode ---
+// --- the title: awkward pixel letters that get sliced every so often ---
+// Each letter is built on the same 24×24 grid as the food sprites and run
+// through the same roughenSprite pass, so the glyphs come out hand-cut and
+// a little different every time they rebuild.
 
-function canvasPoint(el, e) {
-  const r = el.getBoundingClientRect();
-  return {
-    x: (e.clientX - r.left) * (el.width / r.width),
-    y: (e.clientY - r.top) * (el.height / r.height),
-  };
+const tc = document.getElementById('titleCanvas');
+const tcc = tc.getContext('2d');
+const TITLE_CZ = 4; // screen px per grid cell
+
+const LETTER_COLORS = ['#e94560', '#f5a623', '#8fbf58', '#5f85db', '#ee87b2', '#f4d03f'];
+
+const LETTER_FONT = {
+  S: ['.####', '#....', '#....', '.###.', '....#', '....#', '####.'],
+  H: ['#...#', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
+  A: ['.###.', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
+  P: ['####.', '#...#', '#...#', '####.', '#....', '#....', '#....'],
+  E: ['#####', '#....', '#....', '####.', '#....', '#....', '#####'],
+  C: ['.####', '#....', '#....', '#....', '#....', '#....', '.####'],
+  U: ['#...#', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
+  T: ['#####', '..#..', '..#..', '..#..', '..#..', '..#..', '..#..'],
+  R: ['####.', '#...#', '#...#', '####.', '#.#..', '#..#.', '#...#'],
+};
+
+// 5×7 glyph at 3× → 15×21 cells, centered on the shared 24×24 grid
+function buildLetterBase(ch, color) {
+  const rows = LETTER_FONT[ch];
+  const cells = Array.from({ length: FOOD_N }, () => Array(FOOD_N).fill(null));
+  for (let y = 0; y < 7; y++) {
+    for (let x = 0; x < 5; x++) {
+      if (rows[y][x] !== '#') continue;
+      for (let dy = 0; dy < 3; dy++) {
+        for (let dx = 0; dx < 3; dx++) {
+          cells[1 + y * 3 + dy][4 + x * 3 + dx] = color;
+        }
+      }
+    }
+  }
+  return { name: ch, cells };
 }
 
+const titleLetters = [];
+{
+  let pen = 8;
+  let ci = 0;
+  for (const ch of 'SHAPE CUTTER') {
+    if (ch === ' ') {
+      pen += 28;
+      continue;
+    }
+    const base = buildLetterBase(ch, LETTER_COLORS[ci++ % LETTER_COLORS.length]);
+    titleLetters.push({
+      base,
+      inst: roughenSprite(base),
+      gx: pen - 4 * TITLE_CZ,
+      gy: (tc.height - FOOD_N * TITLE_CZ) / 2,
+      born: 0,
+      cut: null,
+    });
+    pen += 15 * TITLE_CZ + 8;
+  }
+}
+
+let nextTitleCut = performance.now() + 2200;
+
+function drawTitle(now) {
+  tcc.clearRect(0, 0, tc.width, tc.height);
+
+  if (now >= nextTitleCut) {
+    nextTitleCut = now + 1800 + Math.random() * 2600;
+    const candidates = titleLetters.filter((l) => !l.cut);
+    if (candidates.length) {
+      const letter = candidates[Math.floor(Math.random() * candidates.length)];
+      const poly = letter.inst.polygon.map((p) => ({
+        x: letter.gx + p.x * TITLE_CZ,
+        y: letter.gy + p.y * TITLE_CZ,
+      }));
+      const c = centroid(poly);
+      const th = Math.random() * Math.PI;
+      const dir = { x: Math.cos(th), y: Math.sin(th) };
+      const off = (Math.random() - 0.5) * 14;
+      const a = { x: c.x - dir.x * 200 - dir.y * off, y: c.y - dir.y * 200 + dir.x * off };
+      const b = { x: c.x + dir.x * 200 - dir.y * off, y: c.y + dir.y * 200 + dir.x * off };
+      const [p1, p2] = splitPolygon(poly, a, b);
+      if (p1.length >= 3 && p2.length >= 3) {
+        const xs = poly.map((p) => p.x);
+        const ys = poly.map((p) => p.y);
+        const bbox = [
+          { x: Math.min(...xs), y: Math.min(...ys) },
+          { x: Math.max(...xs), y: Math.min(...ys) },
+          { x: Math.max(...xs), y: Math.max(...ys) },
+          { x: Math.min(...xs), y: Math.max(...ys) },
+        ];
+        letter.cut = {
+          pieces: [p1, p2],
+          normal: { x: -dir.y, y: dir.x },
+          span: lineSpanThroughRect(bbox, a, b),
+          start: now,
+        };
+      }
+    }
+  }
+
+  for (const letter of titleLetters) {
+    if (letter.cut) {
+      const t = (now - letter.cut.start) / 1000;
+      if (t > 0.9) {
+        letter.inst = roughenSprite(letter.base); // rebuilt, freshly awkward
+        letter.cut = null;
+        letter.born = now;
+      } else {
+        const k = easeOut(Math.min(t / 0.5, 1)) * 8;
+        tcc.globalAlpha = t < 0.5 ? 1 : 1 - (t - 0.5) / 0.4;
+        letter.cut.pieces.forEach((piece, i) => {
+          const s = i === 0 ? 1 : -1;
+          tcc.save();
+          tcc.translate(letter.cut.normal.x * k * s, letter.cut.normal.y * k * s);
+          tracePath(tcc, piece);
+          tcc.clip();
+          drawCellsAt(tcc, letter.inst.cells, letter.gx, letter.gy, TITLE_CZ);
+          tcc.restore();
+        });
+        tcc.globalAlpha = 1;
+        if (t < 0.15 && letter.cut.span) {
+          tcc.save();
+          tcc.globalAlpha = 1 - t / 0.15;
+          tcc.strokeStyle = '#fff';
+          tcc.lineWidth = 2;
+          tcc.beginPath();
+          tcc.moveTo(letter.cut.span[0].x, letter.cut.span[0].y);
+          tcc.lineTo(letter.cut.span[1].x, letter.cut.span[1].y);
+          tcc.stroke();
+          tcc.restore();
+        }
+        continue;
+      }
+    }
+    tcc.globalAlpha = letter.born ? Math.min((now - letter.born) / 220, 1) : 1;
+    drawCellsAt(tcc, letter.inst.cells, letter.gx, letter.gy, TITLE_CZ);
+    tcc.globalAlpha = 1;
+  }
+}
+
+// --- slice-to-enter: drag a cut across a whole card to pick that mode ---
+
+// overlay canvas above the page for the aim line and the cut flash
+const fxo = document.createElement('canvas');
+fxo.id = 'fxOverlay';
+document.body.appendChild(fxo);
+const fxoc = fxo.getContext('2d');
+
+function sizeFxo() {
+  fxo.width = innerWidth;
+  fxo.height = innerHeight;
+}
+sizeFxo();
+addEventListener('resize', sizeFxo);
+
+let cardAim = null; // { card, page, a, b } in viewport coords
+let cutFlash = null; // { a, b, start }
+
+const howEl = document.querySelector('.how');
+
+// Shake via inline style — swapping the animation *class* would restart the
+// card's entrance animation and make it blink out for its delay period.
 function flashHint(card) {
   card.classList.add('hint-flash');
-  setTimeout(() => card.classList.remove('hint-flash'), 700);
+  card.style.animation = 'cardshake 0.4s ease';
+  if (howEl) howEl.classList.add('hint-flash');
+  setTimeout(() => {
+    card.classList.remove('hint-flash');
+    card.style.animation = 'none';
+    if (howEl) howEl.classList.remove('hint-flash');
+  }, 700);
 }
 
-function wireSlicing(el, page, api) {
-  const card = el.closest('.mode');
-  let aimStart = null;
+// clip the infinite cut line to the card's rectangle (plus a little overshoot)
+function lineSpanThroughRect(rectPoly, a, b) {
+  const hits = [];
+  for (let i = 0; i < rectPoly.length; i++) {
+    const p = rectPoly[i];
+    const q = rectPoly[(i + 1) % rectPoly.length];
+    const sp = side(a, b, p);
+    const sq = side(a, b, q);
+    if ((sp > EPS && sq < -EPS) || (sp < -EPS && sq > EPS)) {
+      hits.push(lineSegmentIntersection(a, b, p, q));
+    }
+  }
+  if (hits.length < 2) return null;
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  hits.sort((u, v) => u.x * dx + u.y * dy - (v.x * dx + v.y * dy));
+  const e0 = hits[0];
+  const e1 = hits[hits.length - 1];
+  const len = Math.hypot(e1.x - e0.x, e1.y - e0.y) || 1;
+  const ux = (e1.x - e0.x) / len;
+  const uy = (e1.y - e0.y) / len;
+  return [
+    { x: e0.x - ux * 26, y: e0.y - uy * 26 },
+    { x: e1.x + ux * 26, y: e1.y + uy * 26 },
+  ];
+}
 
-  // plain pointer clicks don't navigate — slicing does. Keyboard "clicks"
-  // (Enter on the focused link, e.detail === 0) still navigate normally.
+// Split the card's rectangle with the engine, clip two live clones of the
+// card to the two pieces, send them flying apart, then navigate.
+function sliceCard(card, page, a, b) {
+  const r = card.getBoundingClientRect();
+  const rectPoly = [
+    { x: r.left, y: r.top },
+    { x: r.right, y: r.top },
+    { x: r.right, y: r.bottom },
+    { x: r.left, y: r.bottom },
+  ];
+  const [p1, p2] = splitPolygon(rectPoly, a, b);
+  if (p1.length < 3 || p2.length < 3) {
+    flashHint(card); // the line missed the card
+    return;
+  }
+
+  const len = Math.hypot(b.x - a.x, b.y - a.y);
+  const n = { x: -(b.y - a.y) / len, y: (b.x - a.x) / len };
+
+  [p1, p2].forEach((piece, i) => {
+    const clone = card.cloneNode(true);
+    // cloned canvases are blank — copy the live preview bitmaps over
+    const src = card.querySelectorAll('canvas');
+    clone.querySelectorAll('canvas').forEach((dc, j) => {
+      dc.getContext('2d').drawImage(src[j], 0, 0);
+    });
+    const clip = piece
+      .map((p) => `${(p.x - r.left).toFixed(1)}px ${(p.y - r.top).toFixed(1)}px`)
+      .join(', ');
+    Object.assign(clone.style, {
+      position: 'fixed',
+      left: `${r.left}px`,
+      top: `${r.top}px`,
+      width: `${r.width}px`,
+      height: `${r.height}px`,
+      boxSizing: 'border-box',
+      margin: '0',
+      zIndex: '60',
+      clipPath: `polygon(${clip})`,
+      animation: 'none',
+      pointerEvents: 'none',
+      transition: 'transform 0.5s cubic-bezier(0.2, 0.7, 0.3, 1), opacity 0.5s ease',
+    });
+    document.body.appendChild(clone);
+    const s = i === 0 ? 1 : -1;
+    requestAnimationFrame(() => {
+      clone.style.transform = `translate(${n.x * 190 * s}px, ${n.y * 190 * s}px) rotate(${s * 7}deg)`;
+      clone.style.opacity = '0';
+    });
+  });
+
+  card.style.visibility = 'hidden';
+
+  // flash only along the card, not across the whole page
+  const span = lineSpanThroughRect(rectPoly, a, b);
+  if (span) cutFlash = { a: span[0], b: span[1], start: performance.now() };
+
+  // then the whole screen closes like a shutter along the same cut line,
+  // in this mode's accent color, and we enter through it
+  const accent = getComputedStyle(card).getPropertyValue('--accent').trim() || '#e94560';
+  const viewport = [
+    { x: 0, y: 0 },
+    { x: innerWidth, y: 0 },
+    { x: innerWidth, y: innerHeight },
+    { x: 0, y: innerHeight },
+  ];
+  const [w1, w2] = splitPolygon(viewport, a, b);
+  const D = Math.hypot(innerWidth, innerHeight);
+  [w1, w2].forEach((piece, i) => {
+    if (piece.length < 3) return;
+    const panel = document.createElement('div');
+    panel.className = 'wipe-panel';
+    const s = i === 0 ? 1 : -1;
+    panel.style.background = `linear-gradient(160deg, ${accent}, #10182e 70%)`;
+    panel.style.clipPath = `polygon(${piece
+      .map((p) => `${p.x.toFixed(1)}px ${p.y.toFixed(1)}px`)
+      .join(', ')})`;
+    panel.style.transform = `translate(${n.x * D * s}px, ${n.y * D * s}px)`;
+    panel.style.transition = 'transform 0.45s cubic-bezier(0.7, 0, 0.3, 1) 0.18s';
+    document.body.appendChild(panel);
+    requestAnimationFrame(() => {
+      panel.style.transform = 'translate(0, 0)';
+    });
+  });
+
+  setTimeout(() => {
+    location.href = page;
+  }, 700);
+}
+
+for (const card of document.querySelectorAll('.mode')) {
+  const page = card.getAttribute('href');
+  // pointer clicks don't navigate — slicing does. Keyboard Enter
+  // (e.detail === 0) and reduced-motion users still navigate normally.
   card.addEventListener('click', (e) => {
     if (!REDUCED && e.detail !== 0) e.preventDefault();
   });
   card.addEventListener('dragstart', (e) => e.preventDefault());
-
-  el.addEventListener('pointerdown', (e) => {
+  card.addEventListener('pointerdown', (e) => {
+    if (REDUCED) return;
     e.preventDefault();
-    el.setPointerCapture(e.pointerId);
-    aimStart = canvasPoint(el, e);
-    api.begin(aimStart);
+    card.setPointerCapture(e.pointerId);
+    cardAim = {
+      card,
+      page,
+      a: { x: e.clientX, y: e.clientY },
+      b: { x: e.clientX, y: e.clientY },
+    };
   });
-  el.addEventListener('pointermove', (e) => {
-    if (aimStart) api.update(aimStart, canvasPoint(el, e));
+  card.addEventListener('pointermove', (e) => {
+    if (cardAim && cardAim.card === card) cardAim.b = { x: e.clientX, y: e.clientY };
   });
-  el.addEventListener('pointerup', (e) => {
-    if (!aimStart) return;
-    const a = aimStart;
-    aimStart = null;
-    const b = canvasPoint(el, e);
-    if (Math.hypot(b.x - a.x, b.y - a.y) >= 8) {
-      const polygon = api.polygon();
-      if (polygon) {
-        const [p1, p2] = splitPolygon(polygon, a, b);
-        if (p1.length >= 3 && p2.length >= 3) {
-          const len = Math.hypot(b.x - a.x, b.y - a.y);
-          api.cut([p1, p2], { x: -(b.y - a.y) / len, y: (b.x - a.x) / len });
-          setTimeout(() => {
-            location.href = page;
-          }, 520);
-          return;
-        }
-      }
+  card.addEventListener('pointerup', () => {
+    if (!cardAim || cardAim.card !== card) return;
+    const { a, b } = cardAim;
+    cardAim = null;
+    if (Math.hypot(b.x - a.x, b.y - a.y) < 10) {
+      flashHint(card); // a plain click: nudge toward slicing
+      return;
     }
-    api.clear(); // too short a drag, or the line missed — nudge the hint
-    flashHint(card);
+    sliceCard(card, page, a, b);
   });
 }
 
-wireSlicing(sp, 'shape.html', {
-  begin(p) {
-    spState.aim = [p, p];
-  },
-  update(a, b) {
-    spState.aim = [a, b];
-  },
-  clear() {
-    spState.aim = null;
-  },
-  polygon() {
-    return slice.poly;
-  },
-  cut(pieces, normal) {
-    spState.aim = null;
-    spState.cut = { pieces, normal, start: performance.now() };
-  },
-});
-
-wireSlicing(fp, 'objects.html', {
-  begin(p) {
-    fpState.geom = dish.geom;
-    fpState.aim = [p, p];
-  },
-  update(a, b) {
-    fpState.aim = [a, b];
-  },
-  clear() {
-    fpState.aim = null;
-    fpState.geom = null;
-  },
-  polygon() {
-    const g = fpState.geom;
-    if (!g) return null;
-    return dish.sprite.polygon.map((p) => ({ x: g.x + p.x * g.s, y: g.y + p.y * g.s }));
-  },
-  cut(pieces, normal) {
-    fpState.aim = null;
-    fpState.cut = { pieces, normal, start: performance.now() };
-  },
-});
+function drawOverlay(now) {
+  fxoc.clearRect(0, 0, fxo.width, fxo.height);
+  if (cardAim) {
+    // a finite segment from the press point to the pointer, not a page-wide line
+    const { a, b } = cardAim;
+    fxoc.save();
+    fxoc.setLineDash([10, 8]);
+    fxoc.lineDashOffset = -now / 24;
+    fxoc.strokeStyle = 'rgba(255,255,255,0.85)';
+    fxoc.lineWidth = 2;
+    fxoc.beginPath();
+    fxoc.moveTo(a.x, a.y);
+    fxoc.lineTo(b.x, b.y);
+    fxoc.stroke();
+    fxoc.setLineDash([]);
+    fxoc.fillStyle = '#fff';
+    fxoc.beginPath();
+    fxoc.arc(a.x, a.y, 4, 0, Math.PI * 2);
+    fxoc.fill();
+    fxoc.beginPath();
+    fxoc.arc(b.x, b.y, 3, 0, Math.PI * 2);
+    fxoc.fill();
+    fxoc.restore();
+  }
+  if (cutFlash) {
+    const t = (now - cutFlash.start) / 1000;
+    if (t > 0.5) {
+      cutFlash = null;
+    } else {
+      fxoc.save();
+      fxoc.globalAlpha = 1 - t / 0.5;
+      fxoc.shadowColor = '#e94560';
+      fxoc.shadowBlur = 14;
+      fxoc.strokeStyle = '#fff';
+      fxoc.lineWidth = 3;
+      fxoc.beginPath();
+      fxoc.moveTo(cutFlash.a.x, cutFlash.a.y);
+      fxoc.lineTo(cutFlash.b.x, cutFlash.b.y);
+      fxoc.stroke();
+      fxoc.restore();
+    }
+  }
+}
 
 // --- drive it ---
 
 if (REDUCED) {
   // static frame of each preview, no motion
+  drawTitle(performance.now());
   drawShapesPreview(slice.start + 500);
   drawFoodPreview(dish.start + 1000);
 } else {
@@ -521,8 +723,10 @@ if (REDUCED) {
     const dt = Math.min((now - last) / 1000, 0.05);
     last = now;
     drawBackground(now, dt);
+    drawTitle(now);
     drawShapesPreview(now);
     drawFoodPreview(now);
+    drawOverlay(now);
     requestAnimationFrame(tick);
   }
   requestAnimationFrame(tick);
