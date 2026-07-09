@@ -236,13 +236,7 @@ function drawSlash(now) {
 function drawBackground(now, dt) {
   bgc.clearRect(0, 0, bg.width, bg.height);
   if (LANDING) {
-    drawBoardBase(); // full-window base + glow
-    updateAmbient(dt); // deep drifting silhouettes + specks
-    drawAmbient();
-    drawBoardGrid(); // grid + board edge, on top of the ambient layer
-    const info = perimeterInfo();
-    updateChase(info, now, dt);
-    drawChase(info, now);
+    drawKitchen(now);
     return;
   }
   for (const d of drifters) drawDrifter(d, dt);
@@ -251,6 +245,356 @@ function drawBackground(now, dt) {
     nextSlashAt = now + 2600 + Math.random() * 2400;
   }
   drawSlash(now);
+}
+
+// ===================================================================
+// Landing scene: an isometric night kitchen. Three food-dimension dishes sit
+// on a table — a breadstick (1D), pancakes (2D), a layer cake (3D). Drag a
+// knife across one to slice it and enter that mode.
+// ===================================================================
+
+const scene = { cx: 0, cy: 0, S: 40 };
+
+function sceneLayout() {
+  scene.S = Math.max(24, Math.min(bg.width / 15, bg.height / 10.5));
+  scene.cx = bg.width / 2;
+  scene.cy = bg.height * 0.54;
+}
+
+// world (table units, +z up) → screen, 2:1 isometric
+function iso(wx, wy, wz) {
+  return {
+    x: scene.cx + (wx - wy) * scene.S,
+    y: scene.cy + (wx + wy) * scene.S * 0.5 - wz * scene.S,
+  };
+}
+
+function scenePath(pts) {
+  bgc.beginPath();
+  bgc.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < pts.length; i++) bgc.lineTo(pts[i].x, pts[i].y);
+  bgc.closePath();
+}
+
+const TAB = { hx: 3.8, hy: 2.05, top: 2.3, thick: 0.3, leg: 0.24 };
+
+const DISHES = [
+  { mode: '1d.html', label: '1D', name: 'breadstick', accent: '#5f85db', wx: -2.5, kind: 'stick' },
+  { mode: '2d.html', label: '2D', name: 'pancakes', accent: '#e94560', wx: 0, kind: 'pancake' },
+  { mode: '3d.html', label: '3D', name: 'layer cake', accent: '#f5a623', wx: 2.5, kind: 'cake' },
+];
+
+function isoBox(wx, wy, z0, z1, hx, hy, cols) {
+  const A = [wx - hx, wy - hy];
+  const B = [wx + hx, wy - hy];
+  const C = [wx + hx, wy + hy];
+  const D = [wx - hx, wy + hy];
+  const t = (p) => iso(p[0], p[1], z1);
+  const b = (p) => iso(p[0], p[1], z0);
+  scenePath([t(B), t(C), b(C), b(B)]);
+  bgc.fillStyle = cols.right;
+  bgc.fill();
+  scenePath([t(D), t(C), b(C), b(D)]);
+  bgc.fillStyle = cols.left;
+  bgc.fill();
+  scenePath([t(A), t(B), t(C), t(D)]);
+  bgc.fillStyle = cols.top;
+  bgc.fill();
+}
+
+function isoCylinder(wx, wy, z0, z1, r, topCol, sideCol) {
+  const n = 26;
+  const top = [];
+  const bot = [];
+  for (let i = 0; i <= n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    top.push(iso(wx + r * Math.cos(a), wy + r * Math.sin(a), z1));
+    bot.push(iso(wx + r * Math.cos(a), wy + r * Math.sin(a), z0));
+  }
+  bgc.beginPath();
+  bgc.moveTo(top[0].x, top[0].y);
+  for (let i = 1; i <= n; i++) bgc.lineTo(top[i].x, top[i].y);
+  for (let i = n; i >= 0; i--) bgc.lineTo(bot[i].x, bot[i].y);
+  bgc.closePath();
+  bgc.fillStyle = sideCol;
+  bgc.fill();
+  scenePath(top);
+  bgc.fillStyle = topCol;
+  bgc.fill();
+}
+
+function drawNightRoom() {
+  const W = bg.width;
+  const H = bg.height;
+  const g = bgc.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#0c1330');
+  g.addColorStop(0.55, '#101a34');
+  g.addColorStop(1, '#0a0e1e');
+  bgc.fillStyle = g;
+  bgc.fillRect(0, 0, W, H);
+
+  // moonlit window, upper-right
+  const wx0 = W * 0.66;
+  const wy0 = H * 0.1;
+  const ww = Math.min(W * 0.2, 320);
+  const wh = ww * 1.15;
+  const glow = bgc.createRadialGradient(wx0 + ww / 2, wy0 + wh / 2, 10, wx0 + ww / 2, wy0 + wh / 2, ww * 1.8);
+  glow.addColorStop(0, 'rgba(150,178,235,0.22)');
+  glow.addColorStop(1, 'rgba(150,178,235,0)');
+  bgc.fillStyle = glow;
+  bgc.fillRect(wx0 - ww, wy0 - wh, ww * 3, wh * 3);
+  bgc.fillStyle = '#1a2340';
+  bgc.beginPath();
+  bgc.roundRect(wx0 - 7, wy0 - 7, ww + 14, wh + 14, 10);
+  bgc.fill();
+  bgc.save();
+  bgc.beginPath();
+  bgc.roundRect(wx0, wy0, ww, wh, 7);
+  const sky = bgc.createLinearGradient(0, wy0, 0, wy0 + wh);
+  sky.addColorStop(0, '#26345e');
+  sky.addColorStop(1, '#141d3a');
+  bgc.fillStyle = sky;
+  bgc.fill();
+  bgc.clip();
+  bgc.fillStyle = '#e9edf6';
+  bgc.beginPath();
+  bgc.arc(wx0 + ww * 0.66, wy0 + wh * 0.34, ww * 0.16, 0, Math.PI * 2);
+  bgc.fill();
+  bgc.fillStyle = 'rgba(255,255,255,0.8)';
+  for (let i = 0; i < 16; i++) {
+    bgc.fillRect(wx0 + ((i * 971) % ww), wy0 + ((i * 613) % wh), 1.6, 1.6);
+  }
+  bgc.restore();
+  bgc.strokeStyle = '#1a2340';
+  bgc.lineWidth = 3;
+  bgc.beginPath();
+  bgc.moveTo(wx0 + ww / 2, wy0);
+  bgc.lineTo(wx0 + ww / 2, wy0 + wh);
+  bgc.moveTo(wx0, wy0 + wh / 2);
+  bgc.lineTo(wx0 + ww, wy0 + wh / 2);
+  bgc.stroke();
+
+  // warm hanging-lamp pool on the table
+  const tp = iso(0, 0, TAB.top);
+  const lamp = bgc.createRadialGradient(tp.x, tp.y - 12, 20, tp.x, tp.y, scene.S * 7.5);
+  lamp.addColorStop(0, 'rgba(255,198,120,0.20)');
+  lamp.addColorStop(1, 'rgba(255,198,120,0)');
+  bgc.fillStyle = lamp;
+  bgc.fillRect(0, 0, W, H);
+}
+
+function drawTable() {
+  const { hx, hy, top, thick, leg } = TAB;
+  const lz = top - thick;
+  const legCols = { top: '#5a3d24', left: '#3a2615', right: '#4a3018' };
+  const corners = [[-1, -1], [1, -1], [-1, 1], [1, 1]].sort((p, q) => p[0] + p[1] - (q[0] + q[1]));
+  for (const [sx, sy] of corners) {
+    isoBox((hx - leg) * sx, (hy - leg) * sy, 0, lz, leg, leg, legCols);
+  }
+  isoBox(0, 0, lz, top, hx, hy, { top: '#c8935a', left: '#835227', right: '#a5713d' });
+  // grain lines on the top
+  bgc.strokeStyle = 'rgba(90,55,25,0.35)';
+  bgc.lineWidth = 1;
+  for (let gy = -hy + 0.3; gy < hy; gy += 0.5) {
+    const p0 = iso(-hx, gy, top);
+    const p1 = iso(hx, gy, top);
+    bgc.beginPath();
+    bgc.moveTo(p0.x, p0.y);
+    bgc.lineTo(p1.x, p1.y);
+    bgc.stroke();
+  }
+}
+
+function dishHeight(kind) {
+  return kind === 'cake' ? 1.35 : kind === 'pancake' ? 0.42 : 0.34;
+}
+
+function drawDish(d, now) {
+  const z = TAB.top;
+  const bob = Math.sin(now / 700 + d.wx) * 0.04;
+  // plate
+  isoCylinder(d.wx, 0, z, z + 0.06, 1.15, '#e0e4eb', '#b3b9c4');
+
+  if (d.kind === 'stick') {
+    isoBox(d.wx, 0, z + 0.06, z + 0.34, 1.05, 0.16, { top: '#dCA968', left: '#9c6a34', right: '#b9843f' });
+    bgc.strokeStyle = 'rgba(120,75,30,0.6)';
+    bgc.lineWidth = 1.5;
+    for (let i = -2; i <= 2; i++) {
+      const a = iso(d.wx + i * 0.32, -0.16, z + 0.34);
+      const b = iso(d.wx + i * 0.32, 0.16, z + 0.34);
+      bgc.beginPath();
+      bgc.moveTo(a.x, a.y);
+      bgc.lineTo(b.x, b.y);
+      bgc.stroke();
+    }
+  } else if (d.kind === 'pancake') {
+    let zz = z + 0.06;
+    for (let i = 0; i < 3; i++) {
+      isoCylinder(d.wx, 0, zz, zz + 0.12, 0.9, '#e0b878', '#b98a4a');
+      zz += 0.12;
+    }
+    isoCylinder(d.wx, 0, zz, zz + 0.03, 0.55, '#f2d04a', '#cBA83a'); // butter
+  } else {
+    const tiers = [
+      [1.0, 0.5, '#f6d9a8', '#d8a25c'],
+      [0.72, 0.42, '#f6d9a8', '#d8a25c'],
+      [0.46, 0.34, '#f6d9a8', '#d8a25c'],
+    ];
+    let zz = z + 0.06;
+    for (const [r, hgt, top, side] of tiers) {
+      isoCylinder(d.wx, 0, zz, zz + hgt, r, '#fbe6c8', side); // frosting top
+      // side band as cake
+      isoCylinder(d.wx, 0, zz, zz + hgt - 0.06, r, top, side);
+      zz += hgt;
+    }
+    bgc.fillStyle = '#e0483a';
+    const cherry = iso(d.wx, 0, zz + 0.12);
+    bgc.beginPath();
+    bgc.arc(cherry.x, cherry.y, scene.S * 0.12, 0, Math.PI * 2);
+    bgc.fill();
+  }
+
+  // label + name floating above, in screen space
+  const topPt = iso(d.wx, 0, z + dishHeight(d.kind) + 0.5 + bob);
+  bgc.textAlign = 'center';
+  bgc.font = `700 ${Math.round(scene.S * 0.8)}px 'Orbitron', sans-serif`;
+  bgc.lineWidth = 4;
+  bgc.strokeStyle = '#0c1330';
+  bgc.strokeText(d.label, topPt.x, topPt.y);
+  bgc.fillStyle = d.accent;
+  bgc.fillText(d.label, topPt.x, topPt.y);
+  bgc.font = `${Math.round(scene.S * 0.42)}px 'Pixelify Sans', monospace`;
+  bgc.strokeText(d.name, topPt.x, topPt.y + scene.S * 0.55);
+  bgc.fillStyle = '#cfd6ea';
+  bgc.fillText(d.name, topPt.x, topPt.y + scene.S * 0.55);
+  bgc.textAlign = 'left';
+
+  // hit region for slicing (screen space)
+  const mid = iso(d.wx, 0, z + dishHeight(d.kind) * 0.5);
+  d._hit = { x: mid.x, y: mid.y, r: scene.S * 0.95 };
+}
+
+// distance from segment a→b to point p
+function segDist(a, b, p) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const l2 = dx * dx + dy * dy || 1;
+  let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+}
+
+let sceneAim = null;
+let sceneFlash = null;
+
+function dishUnderCut(a, b) {
+  let best = null;
+  for (const d of DISHES) {
+    if (!d._hit) continue;
+    const dist = segDist(a, b, d._hit);
+    if (dist < d._hit.r && (!best || dist < best.dist)) best = { d, dist };
+  }
+  return best && best.d;
+}
+
+function drawKitchen(now) {
+  sceneLayout();
+  drawNightRoom();
+  drawTable();
+  for (const d of [...DISHES].sort((a, b) => a.wx - b.wx)) drawDish(d, now);
+
+  // aim line + highlight of the dish being crossed
+  if (sceneAim) {
+    const hovered = dishUnderCut(sceneAim.a, sceneAim.b);
+    if (hovered && hovered._hit) {
+      bgc.strokeStyle = hovered.accent;
+      bgc.lineWidth = 3;
+      bgc.beginPath();
+      bgc.arc(hovered._hit.x, hovered._hit.y, hovered._hit.r, 0, Math.PI * 2);
+      bgc.stroke();
+    }
+    bgc.save();
+    bgc.setLineDash([10, 8]);
+    bgc.lineDashOffset = -now / 24;
+    bgc.strokeStyle = 'rgba(255,255,255,0.9)';
+    bgc.lineWidth = 2;
+    bgc.beginPath();
+    bgc.moveTo(sceneAim.a.x, sceneAim.a.y);
+    bgc.lineTo(sceneAim.b.x, sceneAim.b.y);
+    bgc.stroke();
+    bgc.restore();
+  }
+  if (sceneFlash) {
+    const t = (now - sceneFlash.start) / 1000;
+    if (t > 0.5) sceneFlash = null;
+    else {
+      bgc.save();
+      bgc.globalAlpha = 1 - t / 0.5;
+      bgc.strokeStyle = '#fff';
+      bgc.lineWidth = 3;
+      bgc.shadowColor = sceneFlash.accent;
+      bgc.shadowBlur = 16;
+      bgc.beginPath();
+      bgc.moveTo(sceneFlash.a.x, sceneFlash.a.y);
+      bgc.lineTo(sceneFlash.b.x, sceneFlash.b.y);
+      bgc.stroke();
+      bgc.restore();
+    }
+  }
+}
+
+function wipeToPage(page, a, b, accent) {
+  const viewport = [
+    { x: 0, y: 0 },
+    { x: innerWidth, y: 0 },
+    { x: innerWidth, y: innerHeight },
+    { x: 0, y: innerHeight },
+  ];
+  const [w1, w2] = splitPolygon(viewport, a, b);
+  const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  const n = { x: -(b.y - a.y) / len, y: (b.x - a.x) / len };
+  const D = Math.hypot(innerWidth, innerHeight);
+  [w1, w2].forEach((piece, i) => {
+    if (piece.length < 3) return;
+    const panel = document.createElement('div');
+    panel.className = 'wipe-panel';
+    const s = i === 0 ? 1 : -1;
+    panel.style.background = `linear-gradient(160deg, ${accent}, #10182e 70%)`;
+    panel.style.clipPath = `polygon(${piece.map((p) => `${p.x.toFixed(1)}px ${p.y.toFixed(1)}px`).join(', ')})`;
+    panel.style.transform = `translate(${n.x * D * s}px, ${n.y * D * s}px)`;
+    panel.style.transition = 'transform 0.45s cubic-bezier(0.7, 0, 0.3, 1) 0.18s';
+    document.body.appendChild(panel);
+    requestAnimationFrame(() => {
+      panel.style.transform = 'translate(0, 0)';
+    });
+  });
+  setTimeout(() => {
+    location.href = page;
+  }, 700);
+}
+
+if (LANDING) {
+  bg.addEventListener('contextmenu', (e) => e.preventDefault());
+  bg.addEventListener('pointerdown', (e) => {
+    if (REDUCED) return;
+    e.preventDefault();
+    bg.setPointerCapture(e.pointerId);
+    sceneAim = { a: { x: e.clientX, y: e.clientY }, b: { x: e.clientX, y: e.clientY } };
+  });
+  bg.addEventListener('pointermove', (e) => {
+    if (sceneAim) sceneAim.b = { x: e.clientX, y: e.clientY };
+  });
+  bg.addEventListener('pointerup', () => {
+    if (!sceneAim) return;
+    const { a, b } = sceneAim;
+    sceneAim = null;
+    if (Math.hypot(b.x - a.x, b.y - a.y) < 14) return; // a tap, not a slice
+    const dish = dishUnderCut(a, b);
+    if (dish) {
+      sceneFlash = { a, b, accent: dish.accent, start: performance.now() };
+      wipeToPage(dish.mode, a, b, dish.accent);
+    }
+  });
 }
 
 // ===================================================================
@@ -1715,13 +2059,7 @@ if (LANDING) {
 
 if (REDUCED) {
   // static frame of each preview, no motion
-  if (LANDING) {
-    drawBoardBase();
-    drawAmbient();
-    drawBoardGrid();
-    const info = perimeterInfo();
-    drawChase(info, performance.now());
-  }
+  if (LANDING) drawKitchen(performance.now());
   if (tc) drawTitle(performance.now());
   if (sp) drawShapesPreview(slice.start + 500);
   if (fp) drawFoodPreview(dish.start + 1000);
