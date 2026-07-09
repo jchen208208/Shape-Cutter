@@ -253,20 +253,23 @@ function drawBackground(now, dt) {
 // knife across one to slice it and enter that mode.
 // ===================================================================
 
-const scene = { cx: 0, cy: 0, S: 40 };
+// Front-facing kitchen counter: the front edge is horizontal (not a diamond);
+// the countertop recedes slightly upward/back so it still reads as 3D.
+const scene = {};
 
 function sceneLayout() {
-  scene.S = Math.max(24, Math.min(bg.width / 15, bg.height / 10.5));
-  scene.cx = bg.width / 2;
-  scene.cy = bg.height * 0.54;
-}
-
-// world (table units, +z up) → screen, 2:1 isometric
-function iso(wx, wy, wz) {
-  return {
-    x: scene.cx + (wx - wy) * scene.S,
-    y: scene.cy + (wx + wy) * scene.S * 0.5 - wz * scene.S,
-  };
+  const W = bg.width;
+  const H = bg.height;
+  scene.W = W;
+  scene.H = H;
+  scene.U = Math.min(W / 22, H / 15); // base unit for dish sizes
+  scene.P = Math.max(2, Math.round(scene.U / 5)); // scene pixel size (chunky pixel art)
+  scene.left = W * 0.21;
+  scene.right = W * 0.79;
+  scene.frontY = H * 0.74; // the counter's front top edge
+  scene.topDepth = H * 0.34; // steep tilt: closer to birdseye
+  scene.inset = (scene.right - scene.left) * 0.1; // back edge perspective inset
+  scene.thick = Math.min(H * 0.05, 44); // countertop edge thickness
 }
 
 function scenePath(pts) {
@@ -276,202 +279,320 @@ function scenePath(pts) {
   bgc.closePath();
 }
 
-const TAB = { hx: 3.8, hy: 2.05, top: 2.3, thick: 0.3, leg: 0.24 };
-
 const DISHES = [
-  { mode: '1d.html', label: '1D', name: 'breadstick', accent: '#5f85db', wx: -2.5, kind: 'stick' },
-  { mode: '2d.html', label: '2D', name: 'pancakes', accent: '#e94560', wx: 0, kind: 'pancake' },
-  { mode: '3d.html', label: '3D', name: 'layer cake', accent: '#f5a623', wx: 2.5, kind: 'cake' },
+  { mode: '1d.html', label: '1D', name: 'breadstick', accent: '#5f85db', fx: 0.28, kind: 'stick' },
+  { mode: '2d.html', label: '2D', name: 'pancakes', accent: '#e94560', fx: 0.5, kind: 'pancake' },
+  { mode: '3d.html', label: '3D', name: 'layer cake', accent: '#f5a623', fx: 0.72, kind: 'cake' },
 ];
 
-function isoBox(wx, wy, z0, z1, hx, hy, cols) {
-  const A = [wx - hx, wy - hy];
-  const B = [wx + hx, wy - hy];
-  const C = [wx + hx, wy + hy];
-  const D = [wx - hx, wy + hy];
-  const t = (p) => iso(p[0], p[1], z1);
-  const b = (p) => iso(p[0], p[1], z0);
-  scenePath([t(B), t(C), b(C), b(B)]);
-  bgc.fillStyle = cols.right;
-  bgc.fill();
-  scenePath([t(D), t(C), b(C), b(D)]);
-  bgc.fillStyle = cols.left;
-  bgc.fill();
-  scenePath([t(A), t(B), t(C), t(D)]);
-  bgc.fillStyle = cols.top;
-  bgc.fill();
+// pixel-art maps: rows of palette keys ('.' = transparent)
+const PIX = {
+  stick: {
+    pal: { '#': '#6b4318', l: '#ecc488', b: '#cf9a55', d: '#a8763a', M: '#8a5a26' },
+    rows: [
+      '.############.',
+      '#lllMlllMllll#',
+      '#bbbMbbbMbbbb#',
+      '#dddddddddddd#',
+      '.############.',
+    ],
+  },
+  pancake: {
+    pal: { '#': '#7c4f1e', t: '#eec27e', s: '#c08a44', y: '#f6d44e', g: '#cfa93a', r: '#a05018' },
+    rows: [
+      '......yy......',
+      '.....yggy.....',
+      '##############',
+      '#tttttttttttt#',
+      '#sssssrssssss#',
+      '##############',
+      '#tttttttttttt#',
+      '#ssssssssrsss#',
+      '##############',
+      '#tttttttttttt#',
+      '#ssssssssssss#',
+      '##############',
+    ],
+  },
+  cake: {
+    pal: {
+      '#': '#8a5a30', f: '#fbe6c8', k: '#d8a25c', p: '#eaa7c4',
+      c: '#e0483a', g: '#4a8a3a', s: '#cfd6e2', S: '#8f97a8',
+    },
+    rows: [
+      '.......g.......',
+      '......ccc......',
+      '......ccc......',
+      '.....#####.....',
+      '.....#fff#.....',
+      '.....#kkk#.....',
+      '...#########...',
+      '...#ppppppp#...',
+      '...#kkkkkkk#...',
+      '###############',
+      '#fffffffffffff#',
+      '#kkkkkkkkkkkkk#',
+      '###############',
+      'sssssssssssssss',
+      '.......S.......',
+      '.......S.......',
+      '.....SSSSS.....',
+    ],
+  },
+  block: {
+    pal: { '#': '#3c2412', h: '#5a3a22', s: '#cfd6e2', w: '#7a4a26', d: '#5e3a1e' },
+    rows: [
+      '..h..h...',
+      '..h..h...',
+      '..s..s...',
+      '#########',
+      '#wwwwwww#',
+      '#wwwwwww#',
+      '#ddddddd#',
+      '#########',
+    ],
+  },
+  jar: {
+    pal: { '#': '#24324e', g: '#3a4f78', u: '#cfd6e2', t: '#b98a4a' },
+    rows: [
+      '.u...t.',
+      '.u...t.',
+      '.u...t.',
+      '#######',
+      '#ggggg#',
+      '#ggggg#',
+      '#ggggg#',
+      '#######',
+    ],
+  },
+  shakers: {
+    pal: { '#': '#c9a24a', s: '#e8ecf4', p: '#6a7390' },
+    rows: [
+      '.#...#.',
+      '###.###',
+      'sss.ppp',
+      'sss.ppp',
+      '###.###',
+    ],
+  },
+};
+
+// x on the countertop at horizontal fraction fx and depth t (0 = front edge, 1 = back)
+function surfX(fx, t) {
+  const l = scene.left + scene.inset * t;
+  const r = scene.right - scene.inset * t;
+  return l + (r - l) * fx;
 }
 
-function isoCylinder(wx, wy, z0, z1, r, topCol, sideCol) {
-  const n = 26;
-  const top = [];
-  const bot = [];
-  for (let i = 0; i <= n; i++) {
-    const a = (i / n) * Math.PI * 2;
-    top.push(iso(wx + r * Math.cos(a), wy + r * Math.sin(a), z1));
-    bot.push(iso(wx + r * Math.cos(a), wy + r * Math.sin(a), z0));
-  }
-  bgc.beginPath();
-  bgc.moveTo(top[0].x, top[0].y);
-  for (let i = 1; i <= n; i++) bgc.lineTo(top[i].x, top[i].y);
-  for (let i = n; i >= 0; i--) bgc.lineTo(bot[i].x, bot[i].y);
-  bgc.closePath();
-  bgc.fillStyle = sideCol;
-  bgc.fill();
-  scenePath(top);
-  bgc.fillStyle = topCol;
-  bgc.fill();
+// where a dish sits on the countertop surface (screen space)
+function dishBase(d) {
+  return { x: surfX(d.fx, 0.45), y: scene.frontY - scene.topDepth * 0.45 };
 }
 
-function drawNightRoom() {
-  const W = bg.width;
-  const H = bg.height;
-  const g = bgc.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0, '#0c1330');
-  g.addColorStop(0.55, '#101a34');
-  g.addColorStop(1, '#0a0e1e');
-  bgc.fillStyle = g;
-  bgc.fillRect(0, 0, W, H);
-
-  // moonlit window, upper-right
-  const wx0 = W * 0.66;
-  const wy0 = H * 0.1;
-  const ww = Math.min(W * 0.2, 320);
-  const wh = ww * 1.15;
-  const glow = bgc.createRadialGradient(wx0 + ww / 2, wy0 + wh / 2, 10, wx0 + ww / 2, wy0 + wh / 2, ww * 1.8);
-  glow.addColorStop(0, 'rgba(150,178,235,0.22)');
-  glow.addColorStop(1, 'rgba(150,178,235,0)');
-  bgc.fillStyle = glow;
-  bgc.fillRect(wx0 - ww, wy0 - wh, ww * 3, wh * 3);
-  bgc.fillStyle = '#1a2340';
-  bgc.beginPath();
-  bgc.roundRect(wx0 - 7, wy0 - 7, ww + 14, wh + 14, 10);
-  bgc.fill();
-  bgc.save();
-  bgc.beginPath();
-  bgc.roundRect(wx0, wy0, ww, wh, 7);
-  const sky = bgc.createLinearGradient(0, wy0, 0, wy0 + wh);
-  sky.addColorStop(0, '#26345e');
-  sky.addColorStop(1, '#141d3a');
-  bgc.fillStyle = sky;
-  bgc.fill();
-  bgc.clip();
-  bgc.fillStyle = '#e9edf6';
-  bgc.beginPath();
-  bgc.arc(wx0 + ww * 0.66, wy0 + wh * 0.34, ww * 0.16, 0, Math.PI * 2);
-  bgc.fill();
-  bgc.fillStyle = 'rgba(255,255,255,0.8)';
-  for (let i = 0; i < 16; i++) {
-    bgc.fillRect(wx0 + ((i * 971) % ww), wy0 + ((i * 613) % wh), 1.6, 1.6);
+// chunky pixel renderer: centered on cx, bottom edge at baseY
+function drawPixMap(rows, pal, cx, baseY, P) {
+  const x0 = Math.round((cx - (rows[0].length * P) / 2) / P) * P;
+  const y0 = Math.round(baseY - rows.length * P);
+  for (let y = 0; y < rows.length; y++) {
+    for (let x = 0; x < rows[y].length; x++) {
+      const col = pal[rows[y][x]];
+      if (!col) continue;
+      bgc.fillStyle = col;
+      bgc.fillRect(x0 + x * P, y0 + y * P, P, P);
+    }
   }
-  bgc.restore();
-  bgc.strokeStyle = '#1a2340';
-  bgc.lineWidth = 3;
-  bgc.beginPath();
-  bgc.moveTo(wx0 + ww / 2, wy0);
-  bgc.lineTo(wx0 + ww / 2, wy0 + wh);
-  bgc.moveTo(wx0, wy0 + wh / 2);
-  bgc.lineTo(wx0 + ww, wy0 + wh / 2);
-  bgc.stroke();
+  return { x0, y0, w: rows[0].length * P, h: rows.length * P };
+}
 
-  // warm hanging-lamp pool on the table
-  const tp = iso(0, 0, TAB.top);
-  const lamp = bgc.createRadialGradient(tp.x, tp.y - 12, 20, tp.x, tp.y, scene.S * 7.5);
-  lamp.addColorStop(0, 'rgba(255,198,120,0.20)');
-  lamp.addColorStop(1, 'rgba(255,198,120,0)');
+function dishShadow(x, y, w) {
+  const P = scene.P;
+  bgc.fillStyle = 'rgba(8,12,24,0.35)';
+  bgc.fillRect(x - w / 2, y - P, w, P * 2);
+  bgc.fillRect(x - w / 2 + P * 2, y + P, w - P * 4, P);
+}
+
+function drawKitchenRoom() {
+  const { W, H, left, right, frontY, topDepth, U } = scene;
+  const backY = frontY - topDepth;
+  // wall
+  bgc.fillStyle = '#151f38';
+  bgc.fillRect(0, 0, W, frontY);
+  // backsplash: chunky tile band behind the counter
+  const t = U * 1.7;
+  const bx0 = left - t;
+  const bx1 = right + t;
+  const by0 = backY - t * 3.2;
+  bgc.fillStyle = '#121a30';
+  bgc.fillRect(bx0, by0, bx1 - bx0, backY - by0);
+  for (let y = by0, row = 0; y < backY; y += t, row++) {
+    for (let x = bx0, col = 0; x < bx1; x += t, col++) {
+      bgc.fillStyle = (row * 5 + col * 3) % 7 === 0 ? '#243252' : '#1e2a46';
+      bgc.fillRect(x + 1, y + 1, Math.min(t, bx1 - x) - 2, Math.min(t, backY - y) - 2);
+    }
+  }
+  // floor: big checker tiles beside the cabinet
+  bgc.fillStyle = '#0d1424';
+  bgc.fillRect(0, frontY, W, H - frontY);
+  const f = t * 1.6;
+  for (let y = frontY, row = 0; y < H; y += f, row++) {
+    for (let x = -f, col = 0; x < W + f; x += f, col++) {
+      if ((row + col) % 2) continue;
+      bgc.fillStyle = '#111a2e';
+      bgc.fillRect(x, y, f, Math.min(f, H - y));
+    }
+  }
+  // warm hanging-lamp glow over the counter
+  const lamp = bgc.createRadialGradient(W / 2, backY, 30, W / 2, backY + topDepth, Math.max(W, H) * 0.55);
+  lamp.addColorStop(0, 'rgba(255,206,132,0.13)');
+  lamp.addColorStop(1, 'rgba(255,206,132,0)');
   bgc.fillStyle = lamp;
   bgc.fillRect(0, 0, W, H);
 }
 
-function drawTable() {
-  const { hx, hy, top, thick, leg } = TAB;
-  const lz = top - thick;
-  const legCols = { top: '#5a3d24', left: '#3a2615', right: '#4a3018' };
-  const corners = [[-1, -1], [1, -1], [-1, 1], [1, 1]].sort((p, q) => p[0] + p[1] - (q[0] + q[1]));
-  for (const [sx, sy] of corners) {
-    isoBox((hx - leg) * sx, (hy - leg) * sy, 0, lz, leg, leg, legCols);
-  }
-  isoBox(0, 0, lz, top, hx, hy, { top: '#c8935a', left: '#835227', right: '#a5713d' });
-  // grain lines on the top
-  bgc.strokeStyle = 'rgba(90,55,25,0.35)';
-  bgc.lineWidth = 1;
-  for (let gy = -hy + 0.3; gy < hy; gy += 0.5) {
-    const p0 = iso(-hx, gy, top);
-    const p1 = iso(hx, gy, top);
-    bgc.beginPath();
-    bgc.moveTo(p0.x, p0.y);
-    bgc.lineTo(p1.x, p1.y);
-    bgc.stroke();
+// cabinet front: drawer row on top, panelled doors below, all hard-edged pixel style
+function drawCabinetFront(x0, y0, x1, y1) {
+  const { U, P } = scene;
+  bgc.fillStyle = '#16213e'; // frame
+  bgc.fillRect(x0, y0, x1 - x0, y1 - y0);
+  const dh = Math.min(U * 1.2, (y1 - y0) * 0.3);
+  const n = 3;
+  const w = (x1 - x0) / n;
+  for (let i = 0; i < n; i++) {
+    const dx = Math.round(x0 + i * w + P);
+    const dw = Math.round(w - P * 2);
+    // drawer face + brass bar handle
+    bgc.fillStyle = '#33486e';
+    bgc.fillRect(dx, y0 + P, dw, dh - P * 2);
+    bgc.fillStyle = '#c9a24a';
+    bgc.fillRect(dx + dw / 2 - U * 0.5, y0 + dh / 2 - P / 2, U, P);
+    // door with recessed panel groove
+    const doorY = y0 + dh + P;
+    const doorH = y1 - doorY - P;
+    bgc.fillStyle = '#2e4266';
+    bgc.fillRect(dx, doorY, dw, doorH);
+    bgc.fillStyle = '#1d2c4a';
+    bgc.fillRect(dx + P * 2, doorY + P * 2, dw - P * 4, doorH - P * 4);
+    bgc.fillStyle = '#33486e';
+    bgc.fillRect(dx + P * 3, doorY + P * 3, dw - P * 6, doorH - P * 6);
+    // knob near the inner seam
+    bgc.fillStyle = '#c9a24a';
+    const kx = i === 2 ? dx + P * 2 : dx + dw - P * 3;
+    bgc.fillRect(kx, doorY + doorH * 0.45, P, P * 2);
   }
 }
 
-function dishHeight(kind) {
-  return kind === 'cake' ? 1.35 : kind === 'pancake' ? 0.42 : 0.34;
+function drawCounter() {
+  const { H, left, right, frontY, topDepth, inset, thick, U, P } = scene;
+  const backY = frontY - topDepth;
+
+  // countertop: pixel-stepped plank rows receding toward the back
+  const rowH = P * 2;
+  const planks = ['#c8935a', '#bf8a4f', '#d09a60'];
+  let pi = 0;
+  for (let y = frontY - rowH; y > backY - rowH; y -= rowH, pi++) {
+    const yy = Math.max(y, backY);
+    const h = y + rowH - yy;
+    const t = (frontY - yy) / topDepth;
+    const l = Math.round((left + inset * t) / P) * P;
+    const r = Math.round((right - inset * t) / P) * P;
+    bgc.fillStyle = planks[pi % 3];
+    bgc.fillRect(l, yy, r - l, h);
+    bgc.fillStyle = 'rgba(90,55,25,0.45)';
+    if (pi % 3 === 2) bgc.fillRect(l, yy, r - l, 1); // plank seam
+    const jx = l + P * 2 + ((pi * 977) % Math.max(1, r - l - P * 4)); // staggered joint
+    bgc.fillRect(jx, yy, 1, h);
+    bgc.fillStyle = '#8a5a2c'; // stepped side edges
+    bgc.fillRect(l, yy, P, h);
+    bgc.fillRect(r - P, yy, P, h);
+  }
+  bgc.fillStyle = '#5e3a1e'; // back rim
+  bgc.fillRect(left + inset, backY, right - left - inset * 2, Math.max(2, P / 2));
+  // crumbs scattered on the top
+  bgc.fillStyle = 'rgba(60,36,14,0.5)';
+  for (let i = 0; i < 24; i++) {
+    const t = ((i * 37) % 100) / 100;
+    bgc.fillRect(surfX(((i * 61) % 100) / 100, t), frontY - topDepth * t, 2, 2);
+  }
+
+  // front edge (thickness lip): hard bands, no gradient
+  bgc.fillStyle = '#9a6a38';
+  bgc.fillRect(left, frontY, right - left, thick);
+  bgc.fillStyle = '#e2b57e';
+  bgc.fillRect(left, frontY, right - left, P);
+  bgc.fillStyle = '#6e4a20';
+  bgc.fillRect(left, frontY + thick - P, right - left, P);
+
+  // cabinet body (top overhangs) + toe-kick
+  const cabL = left + U * 0.4;
+  const cabR = right - U * 0.4;
+  const toe = U * 0.6;
+  drawCabinetFront(cabL, frontY + thick, cabR, H - toe);
+  bgc.fillStyle = '#0a1020';
+  bgc.fillRect(cabL + U * 0.3, H - toe, cabR - cabL - U * 0.6, toe);
+
+  // striped towel hanging over the lip
+  const twx = Math.round(surfX(0.13, 0) / P) * P;
+  for (let i = 0; i < 9; i++) {
+    bgc.fillStyle = i % 3 === 1 ? '#b03a44' : '#e4e8ef';
+    bgc.fillRect(twx, frontY - P + i * P, P * 6, P);
+  }
+
+  // props on the countertop: knife block, utensil jar, salt & pepper
+  drawPixMap(PIX.block.rows, PIX.block.pal, surfX(0.06, 0.6), frontY - topDepth * 0.6, P);
+  drawPixMap(PIX.jar.rows, PIX.jar.pal, surfX(0.94, 0.6), frontY - topDepth * 0.6, P);
+  drawPixMap(PIX.shakers.rows, PIX.shakers.pal, surfX(0.9, 0.22), frontY - topDepth * 0.22, P);
 }
 
 function drawDish(d, now) {
-  const z = TAB.top;
-  const bob = Math.sin(now / 700 + d.wx) * 0.04;
-  // plate
-  isoCylinder(d.wx, 0, z, z + 0.06, 1.15, '#e0e4eb', '#b3b9c4');
+  const { x, y } = dishBase(d);
+  const U = scene.U;
+  const dp = Math.max(2, Math.round(scene.P * 0.8)); // dish pixel size
+  const pix = PIX[d.kind];
+  const w = pix.rows[0].length * dp;
 
+  dishShadow(x, y, w + dp * 4);
+
+  // what it sits on (the cake map includes its own stand)
+  let base = y;
   if (d.kind === 'stick') {
-    isoBox(d.wx, 0, z + 0.06, z + 0.34, 1.05, 0.16, { top: '#dCA968', left: '#9c6a34', right: '#b9843f' });
-    bgc.strokeStyle = 'rgba(120,75,30,0.6)';
-    bgc.lineWidth = 1.5;
-    for (let i = -2; i <= 2; i++) {
-      const a = iso(d.wx + i * 0.32, -0.16, z + 0.34);
-      const b = iso(d.wx + i * 0.32, 0.16, z + 0.34);
-      bgc.beginPath();
-      bgc.moveTo(a.x, a.y);
-      bgc.lineTo(b.x, b.y);
-      bgc.stroke();
-    }
+    // cutting board
+    const bw = w + dp * 6;
+    bgc.fillStyle = '#5e3a1e';
+    bgc.fillRect(x - bw / 2 - dp, y - dp * 3, bw + dp * 2, dp * 3);
+    bgc.fillStyle = '#a8763a';
+    bgc.fillRect(x - bw / 2, y - dp * 3 + 1, bw, dp * 3 - 2);
+    bgc.fillStyle = '#5e3a1e'; // handle hole
+    bgc.fillRect(x + bw / 2 - dp * 2, y - dp * 2, dp, dp);
+    base = y - dp * 2;
   } else if (d.kind === 'pancake') {
-    let zz = z + 0.06;
-    for (let i = 0; i < 3; i++) {
-      isoCylinder(d.wx, 0, zz, zz + 0.12, 0.9, '#e0b878', '#b98a4a');
-      zz += 0.12;
-    }
-    isoCylinder(d.wx, 0, zz, zz + 0.03, 0.55, '#f2d04a', '#cBA83a'); // butter
-  } else {
-    const tiers = [
-      [1.0, 0.5, '#f6d9a8', '#d8a25c'],
-      [0.72, 0.42, '#f6d9a8', '#d8a25c'],
-      [0.46, 0.34, '#f6d9a8', '#d8a25c'],
-    ];
-    let zz = z + 0.06;
-    for (const [r, hgt, top, side] of tiers) {
-      isoCylinder(d.wx, 0, zz, zz + hgt, r, '#fbe6c8', side); // frosting top
-      // side band as cake
-      isoCylinder(d.wx, 0, zz, zz + hgt - 0.06, r, top, side);
-      zz += hgt;
-    }
-    bgc.fillStyle = '#e0483a';
-    const cherry = iso(d.wx, 0, zz + 0.12);
-    bgc.beginPath();
-    bgc.arc(cherry.x, cherry.y, scene.S * 0.12, 0, Math.PI * 2);
-    bgc.fill();
+    // plate
+    bgc.fillStyle = '#b9bfca';
+    bgc.fillRect(x - w / 2 - dp * 2, y - dp * 2, w + dp * 4, dp * 2);
+    bgc.fillStyle = '#dfe3ea';
+    bgc.fillRect(x - w / 2 - dp, y - dp * 2, w + dp * 2, dp);
+    base = y - dp;
   }
+  const m = drawPixMap(pix.rows, pix.pal, x, base, dp);
+  const topY = m.y0;
 
-  // label + name floating above, in screen space
-  const topPt = iso(d.wx, 0, z + dishHeight(d.kind) + 0.5 + bob);
+  // label + name floating above the dish (label bobs in pixel steps)
+  const bob = Math.round(Math.sin(now / 700 + d.fx * 6) * 1.5) * (scene.P / 2);
   bgc.textAlign = 'center';
-  bgc.font = `700 ${Math.round(scene.S * 0.8)}px 'Orbitron', sans-serif`;
+  bgc.font = `700 ${Math.round(U * 0.95)}px 'Orbitron', sans-serif`;
   bgc.lineWidth = 4;
   bgc.strokeStyle = '#0c1330';
-  bgc.strokeText(d.label, topPt.x, topPt.y);
+  const ly = topY - U * 0.7 + bob;
+  bgc.strokeText(d.label, x, ly);
   bgc.fillStyle = d.accent;
-  bgc.fillText(d.label, topPt.x, topPt.y);
-  bgc.font = `${Math.round(scene.S * 0.42)}px 'Pixelify Sans', monospace`;
-  bgc.strokeText(d.name, topPt.x, topPt.y + scene.S * 0.55);
+  bgc.fillText(d.label, x, ly);
+  bgc.font = `${Math.round(U * 0.5)}px 'Pixelify Sans', monospace`;
+  bgc.strokeText(d.name, x, ly + U * 0.65);
   bgc.fillStyle = '#cfd6ea';
-  bgc.fillText(d.name, topPt.x, topPt.y + scene.S * 0.55);
+  bgc.fillText(d.name, x, ly + U * 0.65);
   bgc.textAlign = 'left';
 
   // hit region for slicing (screen space)
-  const mid = iso(d.wx, 0, z + dishHeight(d.kind) * 0.5);
-  d._hit = { x: mid.x, y: mid.y, r: scene.S * 0.95 };
+  d._hit = { x, y: (y + topY) / 2, r: U * 1.4 };
 }
 
 // distance from segment a→b to point p
@@ -499,9 +620,9 @@ function dishUnderCut(a, b) {
 
 function drawKitchen(now) {
   sceneLayout();
-  drawNightRoom();
-  drawTable();
-  for (const d of [...DISHES].sort((a, b) => a.wx - b.wx)) drawDish(d, now);
+  drawKitchenRoom();
+  drawCounter();
+  for (const d of [...DISHES].sort((a, b) => a.fx - b.fx)) drawDish(d, now);
 
   // aim line + highlight of the dish being crossed
   if (sceneAim) {
