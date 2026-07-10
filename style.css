@@ -141,6 +141,7 @@ button {
 }
 .mode {
   --accent: #e94560;
+  pointer-events: auto; /* re-enable: .menu-wrap is pass-through for the landing scene */
   position: relative;
   display: flex;
   flex-direction: column;

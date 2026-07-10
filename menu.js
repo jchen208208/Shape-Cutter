@@ -271,8 +271,8 @@ function sceneLayout() {
   scene.by0 = H * 0.12;
   scene.by1 = H * 0.6;
   // island counter (raised higher off the floor: taller base cabinet)
-  scene.left = W * 0.31;
-  scene.right = W * 0.69;
+  scene.left = W * 0.28;
+  scene.right = W * 0.72;
   scene.frontY = H * 0.735; // island's front top edge
   scene.topDepth = H * 0.17; // visible top surface depth
   scene.inset = (scene.right - scene.left) * 0.09; // back edge perspective inset
@@ -293,72 +293,13 @@ function scenePath(pts) {
 }
 
 const DISHES = [
-  { mode: '1d.html', label: '1D', name: 'breadstick', accent: '#5f85db', fx: 0.25, kind: 'stick' },
-  { mode: '2d.html', label: '2D', name: 'pancakes', accent: '#e94560', fx: 0.5, kind: 'pancake' },
-  { mode: '3d.html', label: '3D', name: 'layer cake', accent: '#f5a623', fx: 0.75, kind: 'cake' },
+  { mode: '1d.html', label: '1D', name: 'breadstick', accent: '#59b8ff', fx: 0.18, kind: 'stick' },
+  { mode: '2d.html', label: '2D', name: 'pancakes', accent: '#ff6b8a', fx: 0.5, kind: 'pancake' },
+  { mode: '3d.html', label: '3D', name: 'layer cake', accent: '#ffc94a', fx: 0.82, kind: 'cake' },
 ];
 
 // pixel-art maps: rows of palette keys ('.' = transparent)
 const PIX = {
-  stick: {
-    pal: { '#': '#6b4318', l: '#ecc488', b: '#cf9a55', d: '#a8763a', M: '#8a5a26' },
-    rows: [
-      '.####################.',
-      '#llllMlllllMlllllMlll#',
-      '#bbbbMbbbbbMbbbbbMbbb#',
-      '#bbbbMbbbbbMbbbbbMbbb#',
-      '#dddddddddddddddddddd#',
-      '.####################.',
-    ],
-  },
-  pancake: {
-    pal: { '#': '#7c4f1e', t: '#eec27e', s: '#c08a44', y: '#f6d44e', g: '#cfa93a', r: '#a05018' },
-    rows: [
-      '........yyyy........',
-      '.......yyggyy.......',
-      '####################',
-      '#tttttttttttttttttt#',
-      '#ssssssssssssssssss#',
-      '#ssrssssssssssrssss#',
-      '####################',
-      '#tttttttttttttttttt#',
-      '#ssssssssssssssssss#',
-      '#ssssssrsssssssssrs#',
-      '####################',
-      '#tttttttttttttttttt#',
-      '#ssssssssssssssssss#',
-      '####################',
-    ],
-  },
-  cake: {
-    pal: {
-      '#': '#8a5a30', f: '#fbe6c8', k: '#d8a25c', p: '#eaa7c4',
-      c: '#e0483a', g: '#4a8a3a', s: '#cfd6e2', S: '#8f97a8',
-    },
-    rows: [
-      '.........gg.........',
-      '........cccc........',
-      '........cccc........',
-      '......########......',
-      '......#ffffff#......',
-      '......#kkkkkk#......',
-      '......#kkkkkk#......',
-      '...##############...',
-      '...#pppppppppppp#...',
-      '...#pppppppppppp#...',
-      '...#kkkkkkkkkkkk#...',
-      '####################',
-      '#ffffffffffffffffff#',
-      '#ffffffffffffffffff#',
-      '#kkkkkkkkkkkkkkkkkk#',
-      '#kkkkkkkkkkkkkkkkkk#',
-      '####################',
-      '...ssssssssssssss...',
-      '.........SS.........',
-      '.........SS.........',
-      '.......SSSSSS.......',
-    ],
-  },
   plant: {
     pal: { '#': '#7a4526', o: '#b56a3a', L: '#3f8746', M: '#5fae5f' },
     rows: [
@@ -560,7 +501,6 @@ function tintPalFor(pal, f) {
   return d;
 }
 const darkPalFor = (pal) => tintPalFor(pal, 0.62);
-const lightPalFor = (pal) => tintPalFor(pal, 1.18);
 
 // soft ellipse under a prop so it sits ON its surface instead of floating
 function contactShadow(cx, y, w) {
@@ -584,41 +524,6 @@ function box3D(x, y, w, h, dx, dy, front, top, side) {
   bgc.strokeStyle = 'rgba(40,30,20,0.35)';
   bgc.lineWidth = 1;
   bgc.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-}
-
-// pixel sprite with a solid extrusion behind it, so it reads as a 3D object
-function drawPixMap3D(rows, pal, cx, baseY, P, sideCol, dirX = 1, dirY = -1) {
-  const x0 = Math.round((cx - (rows[0].length * P) / 2) / P) * P;
-  const y0 = Math.round(baseY - rows.length * P);
-  const depth = Math.max(2, Math.round(P * 0.9)); // body depth toward the VP
-  const filled = (x, y) => y >= 0 && y < rows.length && x >= 0 && x < rows[y].length && !!pal[rows[y][x]];
-  // extruded body offset toward the vanishing point. Each source pixel keeps
-  // the object's own color: darkened on the SIDE it presents, lightened on the
-  // TOP it presents — so the volume has two textured faces, not one flat slab.
-  const dark = darkPalFor(pal);
-  const light = lightPalFor(pal);
-  for (let d = 1; d <= depth; d++) {
-    for (let y = 0; y < rows.length; y++) {
-      const row = rows[y];
-      for (let x = 0; x < row.length; x++) {
-        if (!pal[row[x]]) continue;
-        // a pixel with no neighbor above (toward the light) faces up -> top face
-        const topEdge = !filled(x, y - 1);
-        bgc.fillStyle = (topEdge ? light[row[x]] : dark[row[x]]) || sideCol;
-        bgc.fillRect(x0 + x * P + d * dirX, y0 + y * P + d * dirY, P, P);
-      }
-    }
-  }
-  for (let y = 0; y < rows.length; y++) {
-    const row = rows[y];
-    for (let x = 0; x < row.length; x++) {
-      const col = pal[row[x]];
-      if (!col) continue;
-      bgc.fillStyle = col;
-      bgc.fillRect(x0 + x * P, y0 + y * P, P, P);
-    }
-  }
-  return { x0, y0, w: rows[0].length * P, h: rows.length * P };
 }
 
 // a chunky pixel-art wall clock showing the real time
@@ -938,11 +843,6 @@ function recede(p, s) {
   const v = vpPt();
   return { x: p.x + (v.x - p.x) * s, y: p.y + (v.y - p.y) * s };
 }
-// which way a prop's hidden bulk goes: toward the VP on both axes
-function extrudeDir(cx, cy) {
-  const v = vpPt();
-  return { x: Math.sign(v.x - cx) || 1, y: Math.sign(v.y - cy) || -1 };
-}
 // run draw() in a frame glued to a side wall at (t, fy): x runs along the
 // wall (foreshortened + slanted), y stays vertical — so flat art drawn
 // around the origin comes out lying in the wall's plane
@@ -1005,9 +905,11 @@ function drawKitchenRoom(now) {
       const f1 = Math.min(1, (s + 1) / NPC + off / NPC);
       if (f1 <= f0) continue;
       fillQuad(fpt(f0, t0), fpt(f1, t0), fpt(f1, t1), fpt(f0, t1), plankCols[(k * 5 + s * 3 + 400) % 4]);
-      const e = fpt(f1, (t0 + t1) / 2); // plank end seam
-      bgc.fillStyle = 'rgba(96,60,28,0.55)';
-      bgc.fillRect(e.x - 1, fpt(f1, t0).y, 2, fpt(f1, t1).y - fpt(f1, t0).y);
+      if (f1 < 1) { // plank end seam (skip at the floor's edge, where it would poke onto the wall)
+        const e = fpt(f1, (t0 + t1) / 2);
+        bgc.fillStyle = 'rgba(96,60,28,0.55)';
+        bgc.fillRect(e.x - 1, fpt(f1, t0).y, 2, fpt(f1, t1).y - fpt(f1, t0).y);
+      }
     }
     bgc.strokeStyle = 'rgba(96,60,28,0.6)'; // long seam between rows
     const ra = fpt(0, t1);
@@ -1157,7 +1059,7 @@ function drawKitchenRoom(now) {
   const kp = ctp(bx0 + cw * 0.2, 0.4); // kettle on the rear burner
   contactShadow(kp.x, kp.y, cs * 1.3);
   drawKettle(kp.x, kp.y, cs);
-  const brp = ctp(bx0 + cw * 0.77, 0.5); // bread loaf
+  const brp = ctp(bx0 + cw * 0.63, 0.5); // bread loaf
   drawBread(brp.x, brp.y, cs * 0.95);
   const jp1 = ctp(bx0 + cw * 0.88, 0.38);
   contactShadow(jp1.x, jp1.y, cs);
@@ -1306,24 +1208,33 @@ function drawKitchenRoom(now) {
   const fRx = W * 0.945; // frontal right-side outer edge
   const fMx = W * 0.90; // near vertical edge (door ↔ right-side corner)
   const fyTop = H * 0.3, fyBot = H * 0.9;
-  const dS = 0.3; // door depth: how far it recedes toward the VP
-  const dTL = recede({ x: fMx, y: fyTop }, dS); // door far-top-left (toward counter)
-  const dBL = recede({ x: fMx, y: fyBot }, dS); // door far-bottom-left
+  const dS = 0.2; // door depth: how far it recedes toward the VP
+  // recede toward the point where the RIGHT wall's ceiling and floor seams
+  // meet, so the fridge's edges follow the same leading lines as that wall
+  const fu = H / (H - by1 + by0);
+  const fVP = { x: W + (bx1 - W) * fu, y: by0 * fu };
+  const fRec = (p, s) => ({ x: p.x + (fVP.x - p.x) * s, y: p.y + (fVP.y - p.y) * s });
+  const dTL = fRec({ x: fMx, y: fyTop }, dS); // door far-top-left (toward counter)
+  const dBL = fRec({ x: fMx, y: fyBot }, dS); // door far-bottom-left
   const lerpPt = (a, b, u) => ({ x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u });
   // point inside the door trapezoid: u=0 left(opening)…1 right, v=0 top…1 bottom
   const doorPt = (u, v) => lerpPt(lerpPt(dTL, { x: fMx, y: fyTop }, u), lerpPt(dBL, { x: fMx, y: fyBot }, u), v);
-  bgc.fillStyle = 'rgba(4,7,12,0.3)'; // floor shadow
-  scenePath([dBL, { x: fMx, y: fyBot }, { x: fRx, y: fyBot }, { x: fRx, y: fyBot + P * 2 }, { x: dBL.x - P, y: dBL.y + P * 2 }]);
-  bgc.fill();
+  // tight contact shadow hugging the door's base, parallel to it, on the floor
+  fillQuad(dBL, { x: fMx, y: fyBot }, { x: fMx - P * 3.5, y: fyBot + P * 1.4 }, { x: dBL.x - P * 3.5, y: dBL.y + P * 1.4 }, 'rgba(4,7,12,0.22)');
   // frontal right side (facing viewer, a bit shadowed)
   fillQuad({ x: fMx, y: fyTop }, { x: fRx, y: fyTop }, { x: fRx, y: fyBot }, { x: fMx, y: fyBot }, shade('#e4dbc6', 0.82));
   // door face — receding toward the counter/VP (lit, since it faces the light)
   fillQuad(dTL, { x: fMx, y: fyTop }, { x: fMx, y: fyBot }, dBL, '#ece3ce');
+  // top surface — a visible lid receding toward the same convergence point
+  const tBR = fRec({ x: fRx, y: fyTop }, dS);
+  fillQuad(dTL, { x: fMx, y: fyTop }, { x: fRx, y: fyTop }, tBR, '#f6efdd');
   bgc.strokeStyle = '#a89e86';
   bgc.lineWidth = 2;
-  scenePath([dTL, { x: fMx, y: fyTop }, { x: fRx, y: fyTop }, { x: fRx, y: fyBot }, { x: fMx, y: fyBot }, dBL]);
+  scenePath([dBL, dTL, tBR, { x: fRx, y: fyTop }, { x: fRx, y: fyBot }, { x: fMx, y: fyBot }]);
   bgc.stroke();
   scenePath([dTL, { x: fMx, y: fyTop }, { x: fMx, y: fyBot }, dBL]);
+  bgc.stroke();
+  scenePath([{ x: fMx, y: fyTop }, { x: fRx, y: fyTop }]);
   bgc.stroke();
   // freezer / fridge seam across the door, following its perspective tilt
   bgc.beginPath();
@@ -1339,23 +1250,31 @@ function drawKitchenRoom(now) {
     fillQuad({ x: a.x + bw, y: a.y + 2 }, { x: a.x + bw * 1.5, y: a.y + 2 }, { x: b.x + bw * 1.5, y: b.y + 2 }, { x: b.x + bw, y: b.y + 2 }, '#b0a68f');
     fillQuad({ x: a.x, y: a.y }, { x: a.x + bw, y: a.y }, { x: b.x + bw, y: b.y }, { x: b.x, y: b.y }, '#d9dee6');
   }
-  bgc.fillStyle = '#3a3630'; // feet
-  bgc.fillRect(dBL.x + P, fyBot, P * 1.5, P);
-  bgc.fillRect(fRx - (fRx - fMx) - P * 1.5, fyBot, P * 1.5, P);
-  bgc.fillRect(fRx - P * 2.5, fyBot, P * 1.5, P);
-  // framed photos on the door (placed in door space so they sit on the face)
-  const pp = Math.max(3, Math.round(P * 1.2));
-  const ph1 = doorPt(0.42, 0.22), ph2 = doorPt(0.72, 0.42);
-  drawPixMap(PIX.photoLand.rows, PIX.photoLand.pal, ph1.x, ph1.y, pp);
-  drawPixMap(PIX.photoHeart.rows, PIX.photoHeart.pal, ph2.x, ph2.y, pp);
+  // framed photos on the door, drawn pixel-by-pixel in door (u,v) space so
+  // their rows follow the same converging lines as the fridge's edges
+  const pp = Math.max(2, Math.round(P * 0.75));
+  const du = pp / (fMx - dTL.x), dv = pp / (fyBot - fyTop);
+  const drawDoorPix = (rows, pal, uc, vb) => {
+    const u0 = uc - (rows[0].length / 2) * du, v0 = vb - rows.length * dv;
+    for (let r = 0; r < rows.length; r++)
+      for (let c = 0; c < rows[r].length; c++) {
+        const col = pal[rows[r][c]];
+        if (!col) continue;
+        const o = du * 0.15; // slight overlap so quad seams don't show
+        fillQuad(doorPt(u0 + c * du, v0 + r * dv), doorPt(u0 + (c + 1) * du + o, v0 + r * dv),
+          doorPt(u0 + (c + 1) * du + o, v0 + (r + 1) * dv), doorPt(u0 + c * du, v0 + (r + 1) * dv), col);
+      }
+  };
+  drawDoorPix(PIX.photoLand.rows, PIX.photoLand.pal, 0.42, 0.22);
+  drawDoorPix(PIX.photoHeart.rows, PIX.photoHeart.pal, 0.52, 0.35);
+  const m1 = doorPt(0.42, 0.22 - 7 * dv), m2 = doorPt(0.52, 0.35 - 7 * dv);
   bgc.fillStyle = '#e94560';
-  bgc.fillRect(ph1.x - 2, ph1.y - 7 * pp - 3, 5, 5);
+  bgc.fillRect(m1.x - 2, m1.y - 3, 5, 5);
   bgc.fillStyle = '#5f85db';
-  bgc.fillRect(ph2.x - 2, ph2.y - 7 * pp - 3, 5, 5);
-  // a pixelated potted plant sitting fully ON TOP of the fridge — its base
-  // rests on the top edge and it rises clear above, not over the doors
-  const ftop = doorPt(0.5, 0);
-  contactShadow(ftop.x, ftop.y, (fRx - dTL.x) * 0.42);
+  bgc.fillRect(m2.x - 2, m2.y - 3, 5, 5);
+  // a pixelated potted plant sitting ON the top surface — pushed halfway back
+  // toward the wall so it clearly stands on the lid, not the front edge
+  const ftop = fRec({ x: (fMx + fRx) / 2, y: fyTop }, 0.1);
   drawPlant(ftop.x, ftop.y, U * 0.44, 'bush');
 
   // --- pendant lamps over the island + small ceiling lamps like kitchen4 ---
@@ -1378,14 +1297,14 @@ function drawKitchenRoom(now) {
   for (const fx of [0.13, 0.87]) {
     // little ceiling lamps in the front corners
     const px = W * fx;
-    const sy = H * 0.065 + U * 0.32;
+    const sy = H * 0.065 + U * 0.55;
     bgc.strokeStyle = '#6e4522';
     bgc.lineWidth = 2;
     bgc.beginPath();
     bgc.moveTo(px, 0);
-    bgc.lineTo(px, sy - U * 0.32);
+    bgc.lineTo(px, sy - U * 0.55);
     bgc.stroke();
-    drawShade(px, sy, U * 0.11, U * 0.3, U * 0.32);
+    drawShade(px, sy, U * 0.18, U * 0.5, U * 0.55);
   }
 }
 
@@ -1525,54 +1444,189 @@ function drawCounter() {
   drawPixMap(PIX.knife.rows, PIX.knife.pal, surfX(0.88, 0.78), frontY - topDepth * 0.78, P);
 }
 
+// a dish that has just been sliced: the knife chops, then the FOOD (never
+// its plate/board/stand) splits into two halves that slide apart
+let dishSplit = null; // { dish, start }
+
+// separation between the two food halves right now, 0 while the knife falls
+function dishSep(d, now) {
+  if (!dishSplit || dishSplit.dish !== d) return 0;
+  const t = (now - dishSplit.start) / 1000;
+  return t < 0.28 ? 0 : easeOut(Math.min((t - 0.28) / 0.5, 1)) * scene.U * 0.7;
+}
+
+// run draw() twice as separating halves: each pass is shifted sideways and
+// clipped to its own side of the dish's center line, so a gap opens there
+function splitPasses(cx, sep, draw) {
+  if (!sep) return draw();
+  const { W, H } = scene;
+  for (const s of [-1, 1]) {
+    bgc.save();
+    bgc.translate(sep * s, 0);
+    bgc.beginPath();
+    bgc.rect(s < 0 ? cx - W : cx, -H, W, H * 3);
+    bgc.clip();
+    draw();
+    bgc.restore();
+  }
+}
+
+// grid painter over dish pixels: px places one chunky pixel at (gx right,
+// gy down) from the anchor; ell fills a pixelated ellipse — shared by the
+// three dish renderers below so they all sit on the same coarse grid
+function dishPainter(cx, baseY, p) {
+  const x0 = Math.round(cx / p) * p;
+  const y0 = Math.round(baseY / p) * p;
+  const px = (gx, gy, col) => {
+    bgc.fillStyle = col;
+    bgc.fillRect(x0 + gx * p, y0 + gy * p, p, p);
+  };
+  const ell = (ecy, rx, ry, col) => {
+    for (let gy = -Math.ceil(ry); gy <= Math.ceil(ry); gy++)
+      for (let gx = -Math.ceil(rx); gx <= Math.ceil(rx); gx++)
+        if ((gx / rx) ** 2 + (gy / ry) ** 2 <= 1.02) px(gx, ecy + gy, col);
+  };
+  return { px, ell, y0 };
+}
+
+// the layer cake as a real voxel model, rendered exactly like the foods in
+// 3D mode: cylinder tiers voxelized, only exposed faces kept, drawn with the
+// shared orthographic painter's-algorithm renderer (drawMini3D) and slowly
+// turning under the same tilted camera
+let cakeVoxModel = null; // { cake, stand }: tiers+cherry split; the stand never does
+function buildCakeVoxModel() {
+  const hexShade = (c, f) => '#' + [1, 3, 5]
+    .map((i) => Math.min(255, Math.round(parseInt(c.slice(i, i + 2), 16) * f)).toString(16).padStart(2, '0'))
+    .join('');
+  // a solid voxel cylinder: top layer in the icing color, body in the side
+  // color, every voxel's tint jittered a little so the faces read as texture
+  const disc = (arr, yTop, h, r, side, top) => {
+    for (let y = yTop; y < yTop + h; y++)
+      for (let x = -Math.ceil(r); x <= Math.ceil(r); x++)
+        for (let z = -Math.ceil(r); z <= Math.ceil(r); z++) {
+          if (x * x + z * z > r * r) continue;
+          arr.push({ x, y, z, c: hexShade(y === yTop ? top : side, 0.95 + Math.random() * 0.1) });
+        }
+  };
+  const cake = [];
+  const stand = [];
+  disc(cake, 3, 3, 3.6, '#f5ddba', '#fdf3e0'); // top tier
+  disc(cake, 6, 4, 6.2, '#e59ebc', '#f6cede'); // middle tier
+  disc(cake, 10, 5, 9, '#f5ddba', '#fdf3e0'); // bottom tier
+  disc(stand, 15, 1, 10.5, '#b9c0cc', '#e2e7ef'); // plate
+  disc(stand, 16, 3, 1.6, '#9aa3b2', '#b9c0cc'); // pedestal stem
+  disc(stand, 19, 1, 4, '#8f97a8', '#a8b0bf'); // foot
+  for (let y = 0; y <= 2; y++) // cherry: a small voxel sphere, plus a leaf
+    for (let x = -2; x <= 2; x++)
+      for (let z = -2; z <= 2; z++)
+        if (x * x + (y - 1) ** 2 + z * z <= 2.4) cake.push({ x, y, z, c: '#e0483a' });
+  cake.push({ x: 1, y: -1, z: 0, c: '#4a8a3a' }, { x: 2, y: -1, z: 0, c: '#4a8a3a' });
+  const cy0 = 9; // vertical center of the model, so it rotates in place
+  const polysFor = (vox) => {
+    const lookup = new Set(vox.map((v) => `${v.x},${v.y},${v.z}`));
+    const polys = [];
+    for (const v of vox)
+      for (const dir of MINI_DIRS) {
+        if (lookup.has(`${v.x + dir.d.x},${v.y + dir.d.y},${v.z + dir.d.z}`)) continue;
+        polys.push({
+          pts: dir.o.map((o) => ({ x: v.x + o[0] - 0.5, y: v.y + o[1] - 0.5 - cy0, z: v.z + o[2] - 0.5 })),
+          n: dir.d,
+          color: v.c,
+        });
+      }
+    return polys;
+  };
+  return { cake: polysFor(cake), stand: polysFor(stand) };
+}
+
+function drawCake3D(cx, baseY, p, now, sep) {
+  if (!cakeVoxModel) cakeVoxModel = buildCakeVoxModel();
+  const s = p * 1.05;
+  const pitch = -0.48;
+  const yaw = now / 2600;
+  // the foot's bottom rim projects (cosθ·y + |sinθ|·r) below the model
+  // center — place the center so that rim rests exactly on the counter
+  const drop = (Math.cos(pitch) * 10.5 + Math.sin(-pitch) * 4) * s;
+  bgc.save();
+  bgc.lineWidth = 1; // the scene context often has fat strokes set; thin them
+  bgc.lineJoin = 'round'; // or tiny quads throw miter spikes
+  drawMini3D(bgc, cx * 2, (baseY - drop) * 2, cakeVoxModel.stand, s, yaw, pitch);
+  splitPasses(cx, sep, () => drawMini3D(bgc, cx * 2, (baseY - drop) * 2, cakeVoxModel.cake, s, yaw, pitch));
+  bgc.restore();
+  return baseY - 26 * p;
+}
+
+// a single pancake lying FLAT on the table: a foreshortened 2D pixel disc —
+// cooked edge, toasted speckles, syrup pool and a pat of butter, in the same
+// palette as the pancakes sprite in 2D food mode
+function drawPancakeFlat(cx, baseY, p, sep) {
+  const { px, ell, y0 } = dishPainter(cx, baseY, p);
+  ell(-2, 13, 5.2, '#9aa2b0'); // plate rim
+  ell(-2, 12.2, 4.5, '#dfe3ea'); // plate
+  splitPasses(cx, sep, () => {
+    ell(-2, 9.8, 3.6, '#8f5b3a'); // pancake edge
+    ell(-2, 9, 3.1, '#d9a066'); // cooked ring
+    ell(-2, 7, 2.3, '#eec39a'); // lighter middle
+    for (const [gx, gy] of [[-6, -2], [5, -3], [3, -1], [-3, -4], [7, -2], [-7, -1]])
+      px(gx, gy, '#a05018'); // toasted speckles
+    ell(-2, 4.5, 1.5, '#a5622d'); // syrup pool
+    for (const gx of [-1, 0, 1]) {
+      px(gx, -3, '#f7e08a'); // pat of butter
+      px(gx, -2, '#d9b955');
+    }
+  });
+  return y0 - 7 * p;
+}
+
+// the breadstick as a literal 1D object: a single line of pixels on the
+// cutting board — it has length and nothing else, textured only along it
+function drawStick1D(cx, baseY, p, sep) {
+  const { px, y0 } = dishPainter(cx, baseY, p);
+  for (let gy = -3; gy <= -1; gy++)
+    for (let gx = -14; gx <= 14; gx++) {
+      if ((gy === -3 || gy === -1) && Math.abs(gx) === 14) continue; // rounded corners
+      const edge = gy === -3 || gy === -1 || Math.abs(gx) === 14;
+      px(gx, gy, edge ? '#7a4a22' : '#b98a50');
+    }
+  px(12, -2, '#5e3a1e'); // handle hole
+  splitPasses(cx, sep, () => {
+    for (let gx = -10; gx <= 10; gx++) {
+      const t = Math.abs(gx) / 10; // golden sheen fading toward the crust ends
+      px(gx, -4, t === 1 ? '#8a5a26' : shade('#eec27e', 1.06 - 0.3 * t * t));
+    }
+    px(-5, -4, '#d9a45c'); // two quiet score marks
+    px(4, -4, '#d9a45c');
+  });
+  return y0 - 5 * p;
+}
+
 function drawDish(d, now) {
   const { x, y } = dishBase(d);
   const U = scene.U;
   const dp = scene.dp; // dish pixel size, sized so dishes never crowd
-  const pix = PIX[d.kind];
-  const w = pix.rows[0].length * dp;
-
-  dishShadow(x, y, w + dp * 4);
-
-  // what it sits on (the cake map includes its own stand)
-  let base = y;
+  const sep = dishSep(d, now);
+  let topY;
   if (d.kind === 'stick') {
-    // cutting board
-    const bw = w + dp * 6;
-    bgc.fillStyle = '#5e3a1e';
-    bgc.fillRect(x - bw / 2 - dp, y - dp * 3, bw + dp * 2, dp * 3);
-    bgc.fillStyle = '#a8763a';
-    bgc.fillRect(x - bw / 2, y - dp * 3 + 1, bw, dp * 3 - 2);
-    bgc.fillStyle = '#5e3a1e'; // handle hole
-    bgc.fillRect(x + bw / 2 - dp * 2, y - dp * 2, dp, dp);
-    base = y - dp * 2;
+    dishShadow(x, y, dp * 32);
+    topY = drawStick1D(x, y, dp, sep);
   } else if (d.kind === 'pancake') {
-    // plate
-    bgc.fillStyle = '#b9bfca';
-    bgc.fillRect(x - w / 2 - dp * 2, y - dp * 2, w + dp * 4, dp * 2);
-    bgc.fillStyle = '#dfe3ea';
-    bgc.fillRect(x - w / 2 - dp, y - dp * 2, w + dp * 2, dp);
-    base = y - dp;
+    topY = drawPancakeFlat(x, y, dp, sep); // flat on the table: the plate is its own shadow
+  } else {
+    dishShadow(x, y, dp * 25);
+    topY = drawCake3D(x, y, dp, now, sep);
   }
-  const sideCol = d.kind === 'cake' ? '#b07a44' : d.kind === 'pancake' ? '#9a6a2e' : '#8a5a26';
-  const ddir = extrudeDir(x, base - U);
-  const m = drawPixMap3D(pix.rows, pix.pal, x, base, dp, sideCol, ddir.x, ddir.y);
-  const topY = m.y0;
+  d._top = topY;
 
-  // label + name floating above the dish (label bobs in pixel steps)
+  // number label floating above the dish, in the pixel font (bobs in pixel steps)
   const bob = Math.round(Math.sin(now / 700 + d.fx * 6) * 1.5) * (scene.P / 2);
   bgc.textAlign = 'center';
-  bgc.font = `700 ${Math.round(U * 0.95)}px 'Orbitron', sans-serif`;
+  bgc.font = `${Math.round(U * 1.05)}px 'Pixelify Sans', monospace`;
   bgc.lineWidth = 4;
-  bgc.strokeStyle = '#0c1330';
-  const ly = topY - U * 0.7 + bob;
+  bgc.strokeStyle = '#4a3320';
+  const ly = topY - U * 0.45 + bob;
   bgc.strokeText(d.label, x, ly);
   bgc.fillStyle = d.accent;
   bgc.fillText(d.label, x, ly);
-  bgc.font = `${Math.round(U * 0.5)}px 'Pixelify Sans', monospace`;
-  bgc.strokeText(d.name, x, ly + U * 0.65);
-  bgc.fillStyle = '#cfd6ea';
-  bgc.fillText(d.name, x, ly + U * 0.65);
   bgc.textAlign = 'left';
 
   // hit region for slicing (screen space)
@@ -1602,11 +1656,33 @@ function dishUnderCut(a, b) {
   return best && best.d;
 }
 
+// the chop itself: a big knife falls blade-first onto the dish's center,
+// lingers through the split, then fades as the wipe takes over
+function drawChopKnife(now) {
+  const d = dishSplit.dish;
+  const { x, y } = dishBase(d);
+  const U = scene.U;
+  const t = (now - dishSplit.start) / 1000;
+  const alpha = t < 0.55 ? 1 : Math.max(0, 1 - (t - 0.55) / 0.3);
+  if (alpha <= 0) return;
+  const kp = Math.max(3, Math.round(scene.dp * 1.1));
+  const top = d._top ?? y - U * 2;
+  const fall = Math.min(t / 0.28, 1) ** 2; // accelerating drop
+  const yTip = top - U * 1.5 + (y - scene.dp - (top - U * 1.5)) * fall;
+  bgc.save();
+  bgc.globalAlpha = alpha;
+  bgc.translate(x + kp * 1.5, yTip - 8.5 * kp);
+  bgc.rotate(-Math.PI / 2); // the sprite is horizontal; point the blade down
+  drawPixMap(PIX.knife.rows, PIX.knife.pal, 0, 0, kp);
+  bgc.restore();
+}
+
 function drawKitchen(now) {
   sceneLayout();
   drawKitchenRoom(now);
   drawCounter();
   for (const d of [...DISHES].sort((a, b) => a.fx - b.fx)) drawDish(d, now);
+  if (dishSplit) drawChopKnife(now);
   drawLampGlow();
 
   // aim line + highlight of the dish being crossed
@@ -1682,7 +1758,7 @@ function wipeToPage(page, a, b, accent) {
 if (LANDING) {
   bg.addEventListener('contextmenu', (e) => e.preventDefault());
   bg.addEventListener('pointerdown', (e) => {
-    if (REDUCED) return;
+    if (REDUCED || dishSplit) return;
     e.preventDefault();
     bg.setPointerCapture(e.pointerId);
     sceneAim = { a: { x: e.clientX, y: e.clientY }, b: { x: e.clientX, y: e.clientY } };
@@ -1696,9 +1772,11 @@ if (LANDING) {
     sceneAim = null;
     if (Math.hypot(b.x - a.x, b.y - a.y) < 14) return; // a tap, not a slice
     const dish = dishUnderCut(a, b);
-    if (dish) {
+    if (dish && !dishSplit) {
       sceneFlash = { a, b, accent: dish.accent, start: performance.now() };
-      wipeToPage(dish.mode, a, b, dish.accent);
+      // chop + split first, then the wipe carries us into the mode
+      dishSplit = { dish, start: performance.now() };
+      setTimeout(() => wipeToPage(dish.mode, a, b, dish.accent), 700);
     }
   });
 }
