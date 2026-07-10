@@ -58,25 +58,58 @@ button {
 }
 .kitchen-hint {
   position: fixed;
-  bottom: 18px;
+  bottom: 14px;
   left: 0;
   right: 0;
+  width: fit-content;
   z-index: 1;
   text-align: center;
-  margin: 0;
+  margin: 0 auto;
+  padding: 5px 16px;
   font-family: 'Pixelify Sans', monospace;
   font-size: 15px;
-  color: #aeb6d6;
+  color: #4e2f16;
+  background: rgba(244, 239, 228, 0.9);
+  border: 2px solid #8a5a30;
+  border-radius: 999px;
   pointer-events: none;
   animation: rise 0.7s 0.6s ease-out both;
 }
-.title {
-  margin: 4vh 0 0;
-  line-height: 0;
+/* hanging wooden sign that holds the title + tagline */
+.sign {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 5vh;
+  padding: 18px 30px 14px;
+  background: linear-gradient(#a06e3c, #8a5a30);
+  border: 4px solid #5e3a1e;
+  border-radius: 8px;
+  box-shadow: 0 10px 24px rgba(60, 35, 10, 0.35), inset 0 2px 0 rgba(255, 226, 180, 0.35);
   animation: rise 0.7s ease-out both;
 }
+.sign::before,
+.sign::after {
+  content: '';
+  position: absolute;
+  top: -7.2vh;
+  width: 3px;
+  height: 7.2vh;
+  background: #4e2f16;
+}
+.sign::before {
+  left: 18%;
+}
+.sign::after {
+  right: 18%;
+}
+.title {
+  margin: 0;
+  line-height: 0;
+}
 .title canvas {
-  max-width: min(92vw, 860px);
+  max-width: min(80vw, 640px);
   image-rendering: pixelated;
 }
 .slice-line {
@@ -92,8 +125,8 @@ button {
   font-family: 'Pixelify Sans', monospace;
   font-size: 17px;
   letter-spacing: 0.5px;
-  color: #aab3d0;
-  margin: 18px 0 0;
+  color: #f2e2c4;
+  margin: 12px 0 0;
   animation: rise 0.7s 0.2s ease-out both;
 }
 .tagline-accent {

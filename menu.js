@@ -253,8 +253,9 @@ function drawBackground(now, dt) {
 // knife across one to slice it and enter that mode.
 // ===================================================================
 
-// Front-facing kitchen counter: the front edge is horizontal (not a diamond);
-// the countertop recedes slightly upward/back so it still reads as 3D.
+// One-point-perspective night kitchen: back wall rectangle centered on screen,
+// two side walls converging to it, ceiling and checker floor. A kitchen island
+// (front edge horizontal, top tilted toward birdseye) holds the three dishes.
 const scene = {};
 
 function sceneLayout() {
@@ -262,14 +263,26 @@ function sceneLayout() {
   const H = bg.height;
   scene.W = W;
   scene.H = H;
-  scene.U = Math.min(W / 22, H / 15); // base unit for dish sizes
-  scene.P = Math.max(2, Math.round(scene.U / 5)); // scene pixel size (chunky pixel art)
-  scene.left = W * 0.21;
-  scene.right = W * 0.79;
-  scene.frontY = H * 0.74; // the counter's front top edge
-  scene.topDepth = H * 0.34; // steep tilt: closer to birdseye
-  scene.inset = (scene.right - scene.left) * 0.1; // back edge perspective inset
-  scene.thick = Math.min(H * 0.05, 44); // countertop edge thickness
+  scene.U = Math.min(W / 22, H / 15); // base unit for sizes
+  scene.P = Math.max(2, Math.round(scene.U / 8)); // scene pixel size (finer grid)
+  // back wall rectangle (one-point perspective, VP at its center)
+  scene.bx0 = W * 0.24;
+  scene.bx1 = W * 0.76;
+  scene.by0 = H * 0.12;
+  scene.by1 = H * 0.6;
+  // island counter (raised higher off the floor: taller base cabinet)
+  scene.left = W * 0.31;
+  scene.right = W * 0.69;
+  scene.frontY = H * 0.735; // island's front top edge
+  scene.topDepth = H * 0.17; // visible top surface depth
+  scene.inset = (scene.right - scene.left) * 0.09; // back edge perspective inset
+  scene.thick = Math.min(H * 0.045, 36); // countertop edge thickness
+  scene.faceH = H * 0.17; // island front face below the lip
+  scene.d3 = { dx: Math.round(scene.P * 1.3), dy: Math.round(scene.P * 1.3) }; // oblique extrusion for props
+  // dish pixel size, capped so three dishes never crowd each other
+  const innerW = scene.right - scene.left - 2 * scene.inset * 0.45;
+  scene.dp = Math.max(2, Math.floor(innerW / 92));
+  scene.hitR = Math.min(scene.U * 1.2, innerW * 0.25 * 0.48);
 }
 
 function scenePath(pts) {
@@ -280,9 +293,9 @@ function scenePath(pts) {
 }
 
 const DISHES = [
-  { mode: '1d.html', label: '1D', name: 'breadstick', accent: '#5f85db', fx: 0.28, kind: 'stick' },
+  { mode: '1d.html', label: '1D', name: 'breadstick', accent: '#5f85db', fx: 0.25, kind: 'stick' },
   { mode: '2d.html', label: '2D', name: 'pancakes', accent: '#e94560', fx: 0.5, kind: 'pancake' },
-  { mode: '3d.html', label: '3D', name: 'layer cake', accent: '#f5a623', fx: 0.72, kind: 'cake' },
+  { mode: '3d.html', label: '3D', name: 'layer cake', accent: '#f5a623', fx: 0.75, kind: 'cake' },
 ];
 
 // pixel-art maps: rows of palette keys ('.' = transparent)
@@ -290,28 +303,31 @@ const PIX = {
   stick: {
     pal: { '#': '#6b4318', l: '#ecc488', b: '#cf9a55', d: '#a8763a', M: '#8a5a26' },
     rows: [
-      '.############.',
-      '#lllMlllMllll#',
-      '#bbbMbbbMbbbb#',
-      '#dddddddddddd#',
-      '.############.',
+      '.####################.',
+      '#llllMlllllMlllllMlll#',
+      '#bbbbMbbbbbMbbbbbMbbb#',
+      '#bbbbMbbbbbMbbbbbMbbb#',
+      '#dddddddddddddddddddd#',
+      '.####################.',
     ],
   },
   pancake: {
     pal: { '#': '#7c4f1e', t: '#eec27e', s: '#c08a44', y: '#f6d44e', g: '#cfa93a', r: '#a05018' },
     rows: [
-      '......yy......',
-      '.....yggy.....',
-      '##############',
-      '#tttttttttttt#',
-      '#sssssrssssss#',
-      '##############',
-      '#tttttttttttt#',
-      '#ssssssssrsss#',
-      '##############',
-      '#tttttttttttt#',
-      '#ssssssssssss#',
-      '##############',
+      '........yyyy........',
+      '.......yyggyy.......',
+      '####################',
+      '#tttttttttttttttttt#',
+      '#ssssssssssssssssss#',
+      '#ssrssssssssssrssss#',
+      '####################',
+      '#tttttttttttttttttt#',
+      '#ssssssssssssssssss#',
+      '#ssssssrsssssssssrs#',
+      '####################',
+      '#tttttttttttttttttt#',
+      '#ssssssssssssssssss#',
+      '####################',
     ],
   },
   cake: {
@@ -320,59 +336,170 @@ const PIX = {
       c: '#e0483a', g: '#4a8a3a', s: '#cfd6e2', S: '#8f97a8',
     },
     rows: [
-      '.......g.......',
-      '......ccc......',
-      '......ccc......',
-      '.....#####.....',
-      '.....#fff#.....',
-      '.....#kkk#.....',
-      '...#########...',
-      '...#ppppppp#...',
-      '...#kkkkkkk#...',
-      '###############',
-      '#fffffffffffff#',
-      '#kkkkkkkkkkkkk#',
-      '###############',
-      'sssssssssssssss',
-      '.......S.......',
-      '.......S.......',
-      '.....SSSSS.....',
+      '.........gg.........',
+      '........cccc........',
+      '........cccc........',
+      '......########......',
+      '......#ffffff#......',
+      '......#kkkkkk#......',
+      '......#kkkkkk#......',
+      '...##############...',
+      '...#pppppppppppp#...',
+      '...#pppppppppppp#...',
+      '...#kkkkkkkkkkkk#...',
+      '####################',
+      '#ffffffffffffffffff#',
+      '#ffffffffffffffffff#',
+      '#kkkkkkkkkkkkkkkkkk#',
+      '#kkkkkkkkkkkkkkkkkk#',
+      '####################',
+      '...ssssssssssssss...',
+      '.........SS.........',
+      '.........SS.........',
+      '.......SSSSSS.......',
     ],
   },
-  block: {
-    pal: { '#': '#3c2412', h: '#5a3a22', s: '#cfd6e2', w: '#7a4a26', d: '#5e3a1e' },
+  plant: {
+    pal: { '#': '#7a4526', o: '#b56a3a', L: '#3f8746', M: '#5fae5f' },
     rows: [
-      '..h..h...',
-      '..h..h...',
-      '..s..s...',
-      '#########',
-      '#wwwwwww#',
-      '#wwwwwww#',
-      '#ddddddd#',
-      '#########',
+      '...MMM...',
+      '..MLLLM..',
+      '.LL.L.LL.',
+      '....L....',
+      '.#######.',
+      '.#ooooo#.',
+      '..#ooo#..',
+      '..#####..',
     ],
   },
   jar: {
-    pal: { '#': '#24324e', g: '#3a4f78', u: '#cfd6e2', t: '#b98a4a' },
+    pal: { '#': '#c9a24a', g: '#9fb4d8', a: '#c98a3a' },
     rows: [
-      '.u...t.',
-      '.u...t.',
-      '.u...t.',
+      '.####.',
+      'gggggg',
+      'gaaaag',
+      'gaaaag',
+      'gggggg',
+    ],
+  },
+  knife: {
+    pal: { s: '#cfd6e2', '#': '#8f97a8', h: '#5a3a22' },
+    rows: [
+      'ssssssssssss#hhhh',
+      '.sssssssssss#hhhh',
+      '..ssssssssss#hh..',
+    ],
+  },
+  mug: {
+    pal: { '#': '#c0563e', w: '#f0e7d7', s: 'rgba(220,230,240,0.5)' },
+    rows: [
+      '..s..s.',
+      '.#####.',
+      '#wwww##',
+      '#wwww.#',
+      '#wwww##',
+      '.#####.',
+    ],
+  },
+  book: {
+    pal: { r: '#c0563e', g: '#4a8a5a', b: '#5f85db', p: '#e8dfc8' },
+    rows: [
+      '.rrrrrr.',
+      '.pppppp.',
+      '.gggggg.',
+      '.pppppp.',
+      '.bbbbbb.',
+    ],
+  },
+  bottle: {
+    pal: { k: '#3a2a1a', g: '#2e6a38', c: '#3f8746', l: '#e8dfc8' },
+    rows: [
+      '..k..',
+      '..g..',
+      '.ggg.',
+      '.ccc.',
+      '.lll.',
+      '.ccc.',
+      '.ccc.',
+      '.ccc.',
+    ],
+  },
+  bowl: {
+    pal: { '#': '#5a6478', b: '#7d8698', a: '#e0483a', o: '#f5a623', g: '#5fae5f' },
+    rows: [
+      '..a.o.g..',
+      '.aaooogg.',
+      '#########',
+      '#bbbbbbb#',
+      '.#bbbbb#.',
+      '..#####..',
+    ],
+  },
+  photoLand: {
+    pal: { '#': '#8f7a5a', s: '#bcd3e6', u: '#f5d84e', g: '#5fae5f' },
+    rows: [
       '#######',
-      '#ggggg#',
+      '#ssssu#',
+      '#sssuu#',
+      '#sssss#',
       '#ggggg#',
       '#ggggg#',
       '#######',
     ],
   },
-  shakers: {
-    pal: { '#': '#c9a24a', s: '#e8ecf4', p: '#6a7390' },
+  photoHeart: {
+    pal: { '#': '#8f7a5a', p: '#f2f0ea', h: '#e0483a' },
     rows: [
-      '.#...#.',
-      '###.###',
-      'sss.ppp',
-      'sss.ppp',
-      '###.###',
+      '#######',
+      '#ph.hp#',
+      '#hhhhh#',
+      '#hhhhh#',
+      '#phhhp#',
+      '#pphpp#',
+      '#######',
+    ],
+  },
+  kettle: {
+    pal: { '#': '#6e2f28', r: '#d24a3e', h: '#f08a7e' },
+    rows: [
+      '....####....',
+      '...#....#...',
+      '..########..',
+      '##rrhhrrrr#.',
+      '#rrrrrrrrrr#',
+      '.#rrrrrrrr#.',
+      '..########..',
+    ],
+  },
+  bread: {
+    pal: { '#': '#8a5a26', l: '#e8c084', M: '#a8763a', b: '#cf9a55' },
+    rows: [
+      '..########..',
+      '.#llMllMll#.',
+      '#llllllllll#',
+      '#bbbbbbbbbb#',
+      '#bbbbbbbbbb#',
+      '.##########.',
+    ],
+  },
+  monstera: {
+    pal: { M: '#6fbf73', L: '#3f8746', s: '#7a5a30', '#': '#7a4526', o: '#b56a3a' },
+    rows: [
+      '...MM...MM...',
+      '..MLLM.MLLM..',
+      '.MLLLM.MLLLM.',
+      '.MLLM...MLLM.',
+      '..ML..M..LM..',
+      '...L.MLM.L...',
+      '....LLLLL....',
+      '.....LLL.....',
+      '.....s.s.....',
+      '.....s.s.....',
+      '..#########..',
+      '..#ooooooo#..',
+      '...#ooooo#...',
+      '...#ooooo#...',
+      '....#####....',
     ],
   },
 };
@@ -406,73 +533,899 @@ function drawPixMap(rows, pal, cx, baseY, P) {
 
 function dishShadow(x, y, w) {
   const P = scene.P;
-  bgc.fillStyle = 'rgba(8,12,24,0.35)';
+  bgc.fillStyle = 'rgba(8,12,24,0.28)';
   bgc.fillRect(x - w / 2, y - P, w, P * 2);
   bgc.fillRect(x - w / 2 + P * 2, y + P, w - P * 4, P);
 }
 
-function drawKitchenRoom() {
-  const { W, H, left, right, frontY, topDepth, U } = scene;
-  const backY = frontY - topDepth;
-  // wall
-  bgc.fillStyle = '#151f38';
-  bgc.fillRect(0, 0, W, frontY);
-  // backsplash: chunky tile band behind the counter
-  const t = U * 1.7;
-  const bx0 = left - t;
-  const bx1 = right + t;
-  const by0 = backY - t * 3.2;
-  bgc.fillStyle = '#121a30';
-  bgc.fillRect(bx0, by0, bx1 - bx0, backY - by0);
-  for (let y = by0, row = 0; y < backY; y += t, row++) {
-    for (let x = bx0, col = 0; x < bx1; x += t, col++) {
-      bgc.fillStyle = (row * 5 + col * 3) % 7 === 0 ? '#243252' : '#1e2a46';
-      bgc.fillRect(x + 1, y + 1, Math.min(t, bx1 - x) - 2, Math.min(t, backY - y) - 2);
-    }
-  }
-  // floor: big checker tiles beside the cabinet
-  bgc.fillStyle = '#0d1424';
-  bgc.fillRect(0, frontY, W, H - frontY);
-  const f = t * 1.6;
-  for (let y = frontY, row = 0; y < H; y += f, row++) {
-    for (let x = -f, col = 0; x < W + f; x += f, col++) {
-      if ((row + col) % 2) continue;
-      bgc.fillStyle = '#111a2e';
-      bgc.fillRect(x, y, f, Math.min(f, H - y));
-    }
-  }
-  // warm hanging-lamp glow over the counter
-  const lamp = bgc.createRadialGradient(W / 2, backY, 30, W / 2, backY + topDepth, Math.max(W, H) * 0.55);
-  lamp.addColorStop(0, 'rgba(255,206,132,0.13)');
-  lamp.addColorStop(1, 'rgba(255,206,132,0)');
-  bgc.fillStyle = lamp;
-  bgc.fillRect(0, 0, W, H);
+// multiply an #rrggbb color's channels by f (clamped), for quick shading
+function shade(c, f) {
+  if (!/^#[0-9a-f]{6}$/i.test(c)) return c;
+  return `rgb(${[1, 3, 5]
+    .map((i) => Math.min(255, Math.round(parseInt(c.slice(i, i + 2), 16) * f)))
+    .join(',')})`;
 }
 
-// cabinet front: drawer row on top, panelled doors below, all hard-edged pixel style
+// tinted copies of a sprite palette, so extruded faces keep the object's own
+// texture: a dark set for the side (in shadow) and a light set for the top
+const tintPalCache = new Map();
+function tintPalFor(pal, f) {
+  let byFactor = tintPalCache.get(pal);
+  if (!byFactor) tintPalCache.set(pal, (byFactor = new Map()));
+  let d = byFactor.get(f);
+  if (d) return d;
+  d = {};
+  for (const k in pal) d[k] = shade(pal[k], f);
+  byFactor.set(f, d);
+  return d;
+}
+const darkPalFor = (pal) => tintPalFor(pal, 0.62);
+const lightPalFor = (pal) => tintPalFor(pal, 1.18);
+
+// soft ellipse under a prop so it sits ON its surface instead of floating
+function contactShadow(cx, y, w) {
+  bgc.fillStyle = 'rgba(60,35,15,0.28)';
+  bgc.beginPath();
+  bgc.ellipse(cx, y, w / 2, Math.max(2, w * 0.1), 0, 0, Math.PI * 2);
+  bgc.fill();
+}
+
+// oblique 3D box: front rect (x,y,w,h) extruded up-and-right by (dx,dy).
+// shows the top face and the right side face — consistent light from upper-left.
+function box3D(x, y, w, h, dx, dy, front, top, side) {
+  bgc.fillStyle = side; // right side face
+  scenePath([{ x: x + w, y }, { x: x + w + dx, y: y - dy }, { x: x + w + dx, y: y + h - dy }, { x: x + w, y: y + h }]);
+  bgc.fill();
+  bgc.fillStyle = top; // top face
+  scenePath([{ x, y }, { x: x + w, y }, { x: x + w + dx, y: y - dy }, { x: x + dx, y: y - dy }]);
+  bgc.fill();
+  bgc.fillStyle = front; // front face
+  bgc.fillRect(x, y, w, h);
+  bgc.strokeStyle = 'rgba(40,30,20,0.35)';
+  bgc.lineWidth = 1;
+  bgc.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+}
+
+// pixel sprite with a solid extrusion behind it, so it reads as a 3D object
+function drawPixMap3D(rows, pal, cx, baseY, P, sideCol, dirX = 1, dirY = -1) {
+  const x0 = Math.round((cx - (rows[0].length * P) / 2) / P) * P;
+  const y0 = Math.round(baseY - rows.length * P);
+  const depth = Math.max(2, Math.round(P * 0.9)); // body depth toward the VP
+  const filled = (x, y) => y >= 0 && y < rows.length && x >= 0 && x < rows[y].length && !!pal[rows[y][x]];
+  // extruded body offset toward the vanishing point. Each source pixel keeps
+  // the object's own color: darkened on the SIDE it presents, lightened on the
+  // TOP it presents — so the volume has two textured faces, not one flat slab.
+  const dark = darkPalFor(pal);
+  const light = lightPalFor(pal);
+  for (let d = 1; d <= depth; d++) {
+    for (let y = 0; y < rows.length; y++) {
+      const row = rows[y];
+      for (let x = 0; x < row.length; x++) {
+        if (!pal[row[x]]) continue;
+        // a pixel with no neighbor above (toward the light) faces up -> top face
+        const topEdge = !filled(x, y - 1);
+        bgc.fillStyle = (topEdge ? light[row[x]] : dark[row[x]]) || sideCol;
+        bgc.fillRect(x0 + x * P + d * dirX, y0 + y * P + d * dirY, P, P);
+      }
+    }
+  }
+  for (let y = 0; y < rows.length; y++) {
+    const row = rows[y];
+    for (let x = 0; x < row.length; x++) {
+      const col = pal[row[x]];
+      if (!col) continue;
+      bgc.fillStyle = col;
+      bgc.fillRect(x0 + x * P, y0 + y * P, P, P);
+    }
+  }
+  return { x0, y0, w: rows[0].length * P, h: rows.length * P };
+}
+
+// a chunky pixel-art wall clock showing the real time
+function drawPixelClock(cx, cy, r, now) {
+  const cells = Math.max(7, Math.round((2 * r) / scene.P)); // grid resolution
+  const step = (2 * r) / cells;
+  const cell = (gx, gy, col) => {
+    bgc.fillStyle = col;
+    bgc.fillRect(Math.round(cx - r + gx * step), Math.round(cy - r + gy * step), Math.ceil(step) + 1, Math.ceil(step) + 1);
+  };
+  const c = (cells - 1) / 2;
+  for (let gy = 0; gy < cells; gy++) {
+    for (let gx = 0; gx < cells; gx++) {
+      const d = Math.hypot(gx - c, gy - c);
+      if (d > cells / 2) continue;
+      cell(gx, gy, d > cells / 2 - 1.2 ? '#3a2a1e' : '#efe7d4'); // rim / face
+    }
+  }
+  // tick marks at 12 / 3 / 6 / 9
+  for (const [ex, ey] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) {
+    cell(c + ex * (cells / 2 - 1.3), c + ey * (cells / 2 - 1.3), '#8a5a2c');
+  }
+  // hands, stepped in pixels
+  const dt = new Date();
+  const ha = ((dt.getHours() % 12) / 12 + dt.getMinutes() / 720) * Math.PI * 2 - Math.PI / 2;
+  const ma = (dt.getMinutes() / 60) * Math.PI * 2 - Math.PI / 2;
+  const hand = (ang, len, col) => {
+    for (let s = 0; s <= len; s += step * 0.85) {
+      bgc.fillStyle = col;
+      bgc.fillRect(Math.round(cx + Math.cos(ang) * s - step / 2), Math.round(cy + Math.sin(ang) * s - step / 2), Math.ceil(step), Math.ceil(step));
+    }
+  };
+  hand(ha, r * 0.48, '#7a2f2f');
+  hand(ma, r * 0.72, '#3a2a1e');
+}
+
+// a lamp shade with real volume: banded frustum (lit from the left), pink
+// trim ring, and a bottom opening you can see the glowing bulb inside
+function drawShade(px, sy, topW, botW, shH) {
+  const xAt = (f, w) => px + w * (2 * f - 1);
+  for (const [f0, f1, col] of [[0, 0.34, '#f8ecd6'], [0.34, 0.7, '#f0e2c8'], [0.7, 1, '#d9c3a3']]) {
+    fillQuad(
+      { x: xAt(f0, topW), y: sy - shH },
+      { x: xAt(f1, topW), y: sy - shH },
+      { x: xAt(f1, botW), y: sy },
+      { x: xAt(f0, botW), y: sy },
+      col
+    );
+  }
+  const trimW = topW + (botW - topW) * 0.8; // pink trim near the hem
+  for (const [f0, f1, col] of [[0, 0.62, '#e08a8a'], [0.62, 1, '#c96f6f']]) {
+    fillQuad(
+      { x: xAt(f0, trimW), y: sy - shH * 0.2 },
+      { x: xAt(f1, trimW), y: sy - shH * 0.2 },
+      { x: xAt(f1, botW), y: sy },
+      { x: xAt(f0, botW), y: sy },
+      col
+    );
+  }
+  bgc.fillStyle = '#6e4522'; // fitting cap at the top
+  bgc.fillRect(px - topW * 0.5, sy - shH - 3, topW, 4);
+  // bottom opening, seen from just below: underside rim, lit interior, bulb
+  const ry = botW * 0.26;
+  bgc.fillStyle = '#b98f68';
+  bgc.beginPath();
+  bgc.ellipse(px, sy, botW, ry, 0, 0, Math.PI * 2);
+  bgc.fill();
+  bgc.fillStyle = '#ffdf9e';
+  bgc.beginPath();
+  bgc.ellipse(px, sy, botW * 0.7, ry * 0.62, 0, 0, Math.PI * 2);
+  bgc.fill();
+  bgc.fillStyle = '#fff4d0'; // hot center of the bulb
+  bgc.beginPath();
+  bgc.ellipse(px, sy, botW * 0.28, ry * 0.3, 0, 0, Math.PI * 2);
+  bgc.fill();
+}
+
+// ============================================================================
+// Volumetric prop kit — PIXELATED. Each prop is still a shaded 3D body (curved,
+// light on the left → dark on the right), but rendered on a chunky pixel grid
+// so it matches the pixel-art look of the rest of the scene instead of smooth
+// vector shapes. PQ = current pixel size; each builder sets it from the prop's
+// size. All take (cx, baseY, S): centered on cx, resting ON baseY, sized by S.
+// ============================================================================
+
+let PQ = 3; // current chunky pixel size for volumetric props
+const quant = (S) => Math.max(2, Math.round(S / 7));
+const snap = (v) => Math.round(v / PQ) * PQ;
+
+function pxRect(x, y, w, h, col) {
+  bgc.fillStyle = col;
+  bgc.fillRect(snap(x), snap(y), Math.max(PQ, Math.round(w / PQ) * PQ), Math.max(PQ, Math.round(h / PQ) * PQ));
+}
+
+// pixelated filled ellipse (chunky cells on the PQ grid)
+function disc(cx, cy, rx, ry, col) {
+  rx = Math.max(PQ * 0.5, rx);
+  ry = Math.max(PQ * 0.5, ry);
+  bgc.fillStyle = col;
+  for (let y = snap(cy - ry); y <= cy + ry; y += PQ) {
+    const dy = (y + PQ / 2 - cy) / ry;
+    if (Math.abs(dy) > 1) continue;
+    const half = rx * Math.sqrt(1 - dy * dy);
+    for (let x = snap(cx - half); x <= cx + half; x += PQ) bgc.fillRect(x, y, PQ, PQ);
+  }
+}
+
+// pixelated curved body between topY and botY, tapering topR→botR, shaded
+// light-on-the-left so the surface reads as round
+function bodyBands(cx, topY, botY, topR, botR, base) {
+  for (let y = snap(topY); y < botY; y += PQ) {
+    const f = (y + PQ / 2 - topY) / (botY - topY);
+    const r = Math.max(PQ, topR + (botR - topR) * f);
+    for (let x = snap(cx - r); x <= cx + r; x += PQ) {
+      const fc = Math.max(-1, Math.min(1, (x + PQ / 2 - cx) / r));
+      bgc.fillStyle = shade(base, 1.14 - ((fc + 1) / 2) * 0.62);
+      bgc.fillRect(x, y, PQ, PQ);
+    }
+  }
+}
+
+// pixelated arc (handles), one cell per step
+function pxArc(cx, cy, r, a0, a1, col, thick) {
+  const t = thick || PQ;
+  const steps = Math.ceil((Math.abs(a1 - a0) * r) / PQ) + 1;
+  bgc.fillStyle = col;
+  for (let i = 0; i <= steps; i++) {
+    const a = a0 + (a1 - a0) * (i / steps);
+    bgc.fillRect(snap(cx + Math.cos(a) * r), snap(cy + Math.sin(a) * r), t, t);
+  }
+}
+
+// clay pot with soil; returns the rim geometry for placing foliage
+function drawPot(cx, baseY, w, h, base = '#b56a3a') {
+  const topR = w / 2;
+  const botR = w * 0.37;
+  const topY = baseY - h;
+  disc(cx, baseY, botR, botR * 0.4, shade(base, 0.5)); // shadowed base
+  bodyBands(cx, topY, baseY, topR, botR, base);
+  disc(cx, topY, topR, topR * 0.3, shade(base, 1.12)); // rim lip
+  disc(cx, topY, topR * 0.78, topR * 0.24, '#3f2c1c'); // soil
+  return { topY, topR };
+}
+
+// three plant kinds sharing the pot, so the shelves get some variety
+function drawPlant(cx, baseY, S, kind = 'monstera') {
+  PQ = quant(S);
+  const { topY } = drawPot(cx, baseY, S * 1.4, S * 1.0);
+  if (kind === 'bush') {
+    // rounded mound of chunky leaf clumps, dark behind a lit front
+    const puff = (x, y, r, c) => disc(cx + x * S, topY + y * S, r * S, r * S * 0.92, c);
+    for (const [x, y, r] of [[-0.5, -0.2, 0.5], [0.5, -0.2, 0.5], [0, -0.1, 0.55]]) puff(x, y, r, '#356b34');
+    for (const [x, y, r] of [[-0.32, -0.55, 0.42], [0.34, -0.5, 0.42], [0, -0.78, 0.48], [-0.05, -0.35, 0.5]]) puff(x, y, r, '#59a94e');
+    for (const [x, y, r] of [[-0.18, -0.72, 0.22], [0.12, -0.6, 0.2]]) puff(x, y, r, '#7fce6a');
+  } else if (kind === 'snake') {
+    // upright tapering blades, dark edge + lit center stripe, drawn as columns
+    for (const [bx, tx, hgt] of [[-0.4, -0.14, 1.55], [-0.14, -0.02, 2.0], [0.14, 0.05, 1.85], [0.4, 0.18, 1.4]]) {
+      const n = Math.max(1, Math.round((hgt * S) / PQ));
+      for (let i = 0; i < n; i++) {
+        const f = i / n;
+        const x = cx + (bx + (tx - bx) * f) * S;
+        const y = topY - i * PQ;
+        const bw = Math.max(PQ, (1 - f) * S * 0.3);
+        pxRect(x - bw / 2, y, bw, PQ, '#2f6a34');
+        pxRect(x - PQ / 2, y, PQ, PQ, '#5fae5f');
+      }
+    }
+  } else {
+    // monstera: layered pixel leaves (dark behind, lit in front)
+    const leaves = PIX.monstera.rows.slice(0, 8);
+    const lp = Math.max(2, Math.round(S / 7));
+    drawPixMap(leaves, darkPalFor(PIX.monstera.pal), cx - S * 0.5, topY - S * 0.2, lp);
+    drawPixMap(leaves, darkPalFor(PIX.monstera.pal), cx + S * 0.55, topY - S * 0.3, lp);
+    drawPixMap(leaves, PIX.monstera.pal, cx, topY + S * 0.15, Math.round(lp * 1.3));
+  }
+}
+
+// storage jar: glass body with a lid and a highlight streak
+function drawJar(cx, baseY, S, glass = '#9fb4d8', lid = '#c9a24a') {
+  PQ = quant(S);
+  const w = S * 0.92, h = S * 1.15, topY = baseY - h, r = w / 2;
+  disc(cx, baseY, r * 0.92, r * 0.3, shade(glass, 0.5));
+  bodyBands(cx, topY + h * 0.2, baseY, r, r * 0.92, glass);
+  pxRect(cx - r * 0.6, topY + h * 0.34, PQ, h * 0.42, 'rgba(255,255,255,0.3)'); // highlight
+  bodyBands(cx, topY, topY + h * 0.24, r * 0.96, r, lid); // lid band
+  disc(cx, topY, r * 0.96, r * 0.3, shade(lid, 1.12)); // lid top
+}
+
+// tall bottle: body, shoulder, neck and cap
+function drawBottle(cx, baseY, S, body = '#3f8746') {
+  PQ = quant(S);
+  const w = S * 0.66, r = w / 2, baseTop = baseY - S * 1.15;
+  disc(cx, baseY, r * 0.9, r * 0.3, shade(body, 0.5));
+  bodyBands(cx, baseTop, baseY, r, r * 0.94, body); // main body
+  bodyBands(cx, baseTop - S * 0.32, baseTop, r * 0.42, r, body); // shoulder taper
+  bodyBands(cx, baseY - S * 1.75, baseTop - S * 0.32, r * 0.4, r * 0.42, body); // neck
+  bodyBands(cx, baseY - S * 1.94, baseY - S * 1.75, r * 0.46, r * 0.46, '#2a1c12'); // cap
+  pxRect(cx - r * 0.5, baseTop + S * 0.14, PQ, S * 0.6, 'rgba(255,255,255,0.24)'); // highlight
+}
+
+// mug: cylinder with a handle and a dark coffee surface
+function drawMug(cx, baseY, S, body = '#c0563e') {
+  PQ = quant(S);
+  const w = S * 0.95, h = S * 0.9, r = w / 2, topY = baseY - h;
+  pxArc(cx + r * 0.95, (topY + baseY) / 2, r * 0.5, -1.1, 1.1, shade(body, 0.72), PQ * 1.4); // handle
+  disc(cx, baseY, r * 0.9, r * 0.3, shade(body, 0.5));
+  bodyBands(cx, topY, baseY, r, r * 0.9, body);
+  disc(cx, topY, r, r * 0.34, shade(body, 1.1)); // rim
+  disc(cx, topY, r * 0.72, r * 0.24, '#3a2417'); // coffee
+}
+
+// stack of books: each a thin box with a spine face and lit page-top
+function drawBooks(cx, baseY, S, cols = ['#c0563e', '#4a8a5a', '#5f85db']) {
+  PQ = quant(S);
+  const bw = S * 1.25, bh = Math.max(PQ * 2, S * 0.3);
+  let y = baseY;
+  cols.forEach((c, i) => {
+    const w = bw * (1 - i * 0.12);
+    const x = cx + (i % 2 ? 1 : -1) * S * 0.06 - w / 2;
+    pxRect(x + PQ, y - bh - PQ, w, PQ, '#efe6cf'); // page top (shifted = slight 3D)
+    pxRect(x, y - bh, w, bh, c); // cover / spine
+    pxRect(x, y - PQ, w, PQ, shade(c, 0.7)); // bottom shadow line
+    y -= bh + PQ;
+  });
+}
+
+// shallow bowl of fruit: rounded bowl with round fruits nested in it
+function drawBowl(cx, baseY, S) {
+  PQ = quant(S);
+  const w = S * 1.5, r = w / 2, topY = baseY - S * 0.5;
+  for (const [x, y, fr, c] of [[-0.34, -0.2, 0.3, '#e0483a'], [0.32, -0.18, 0.3, '#f5a623'], [0, -0.34, 0.32, '#5fae5f'], [-0.05, -0.15, 0.3, '#e0483a']]) {
+    disc(cx + x * S, topY + y * S, fr * S, fr * S, c);
+    disc(cx + x * S - fr * S * 0.3, topY + y * S - fr * S * 0.3, fr * S * 0.4, fr * S * 0.4, shade(c, 1.28));
+  }
+  // bowl body: pixel rows forming a lower half-ellipse, shaded darker downward
+  for (let yy = snap(topY); yy <= baseY; yy += PQ) {
+    const dy = (yy - topY) / (baseY - topY);
+    const half = r * Math.sqrt(Math.max(0, 1 - dy * dy));
+    pxRect(cx - half, yy, half * 2, PQ, shade('#7d8698', 1 - dy * 0.3));
+  }
+  disc(cx, topY, r, r * 0.28, '#9aa5b8'); // rim
+  disc(cx, topY, r * 0.84, r * 0.22, '#5a6478'); // inner
+}
+
+// bread loaf: a domed body with a lit top and slash marks
+function drawBread(cx, baseY, S) {
+  PQ = quant(S);
+  const w = S * 1.7, r = w / 2, h = S * 0.82;
+  disc(cx, baseY, r * 0.95, r * 0.28, 'rgba(60,35,15,0.4)');
+  for (let yy = snap(baseY - h); yy <= baseY; yy += PQ) { // domed loaf, pixel rows
+    const dy = (baseY - yy) / h; // 1 top … 0 base
+    const half = r * Math.sqrt(Math.max(0, 1 - Math.pow(1 - dy, 2)));
+    pxRect(cx - half, yy, half * 2, PQ, dy > 0.5 ? '#e8c084' : '#cf9a55');
+  }
+  for (const dx of [-0.42, 0, 0.42]) { // diagonal slashes
+    for (let k = 0; k < 3; k++) pxRect(cx + dx * r - PQ + k * PQ, baseY - h * 0.5 - k * PQ, PQ, PQ, '#a8763a');
+  }
+}
+
+// kettle: rounded body, spout, handle arch and a lid knob
+function drawKettle(cx, baseY, S, body = '#d24a3e') {
+  PQ = quant(S);
+  const w = S * 1.3, r = w / 2, topY = baseY - S * 1.0;
+  pxArc(cx, topY, r * 0.72, Math.PI * 1.15, Math.PI * -0.15, shade(body, 0.7), PQ * 1.5); // handle
+  pxRect(cx + r * 0.7, baseY - S * 0.68, r * 0.5, PQ * 1.4, shade(body, 0.9)); // spout base
+  pxRect(cx + r * 1.05, baseY - S * 0.86, PQ * 1.2, S * 0.2, shade(body, 0.9)); // spout tip
+  disc(cx, baseY - S * 0.18, r * 0.92, r * 0.34, shade(body, 0.55)); // base shadow
+  bodyBands(cx, topY + S * 0.12, baseY - S * 0.12, r, r * 0.78, body); // body
+  disc(cx, topY + S * 0.12, r, r * 0.3, shade(body, 1.12)); // shoulder
+  disc(cx, topY + S * 0.06, r * 0.4, r * 0.14, shade(body, 0.82)); // lid
+  pxRect(cx - PQ, topY - S * 0.1, PQ * 2, S * 0.13, '#3a2a1e'); // knob
+}
+
+// a pan hung on the wall: a pixelated disc lifted a few pixels off the wall by
+// an offset drop shadow, so it reads as 3D without being a smooth vector shape
+function drawPanPix(cx, cy, r, col, inner) {
+  PQ = Math.max(2, Math.round(r / 5.5));
+  disc(cx + PQ * 1.5, cy + PQ * 1.6, r, r, 'rgba(18,24,34,0.24)'); // drop shadow
+  disc(cx, cy + PQ, r, r, shade(col, 0.55)); // depth ring under the rim
+  disc(cx, cy, r, r, col); // rim face
+  disc(cx, cy, r * 0.82, r * 0.82, shade(col, 1.14)); // rim bevel
+  disc(cx, cy, r * 0.56, r * 0.56, inner); // bowl
+  disc(cx, cy + r * 0.16, r * 0.52, r * 0.4, shade(inner, 0.72)); // bowl shadow
+  pxRect(cx - r * 0.42, cy - r * 0.46, PQ, PQ, 'rgba(255,246,228,0.6)'); // glint
+  pxRect(cx - r * 0.24, cy - r * 0.52, PQ, PQ, 'rgba(255,246,228,0.5)');
+  pxRect(cx + r * 0.78, cy - PQ, r * 0.95, PQ * 2, '#5e3a1e'); // handle
+  pxRect(cx + r * 0.78, cy - PQ, r * 0.95, PQ, '#6b4a28');
+  disc(cx + r * 0.78 + r * 0.95, cy, PQ * 1.3, PQ * 1.3, '#4e2f16'); // end tab
+}
+
+// points on the side walls: t = depth (0 = screen edge, 1 = back wall), fy = 0 top .. 1 bottom
+function wallPtL(t, fy) {
+  const x = scene.bx0 * t;
+  const yT = scene.by0 * t;
+  const yB = scene.H + (scene.by1 - scene.H) * t;
+  return { x, y: yT + fy * (yB - yT) };
+}
+function wallPtR(t, fy) {
+  const x = scene.W + (scene.bx1 - scene.W) * t;
+  const yT = scene.by0 * t;
+  const yB = scene.H + (scene.by1 - scene.H) * t;
+  return { x, y: yT + fy * (yB - yT) };
+}
+function fillQuad(a, b, c, d, col) {
+  bgc.fillStyle = col;
+  scenePath([a, b, c, d]);
+  bgc.fill();
+}
+
+// --- one-point perspective toolkit: everything recedes toward the center of
+// the back wall (the vanishing point) ---
+function vpPt() {
+  return { x: (scene.bx0 + scene.bx1) / 2, y: (scene.by0 + scene.by1) / 2 };
+}
+// move a screen point fraction s of the way toward the vanishing point
+function recede(p, s) {
+  const v = vpPt();
+  return { x: p.x + (v.x - p.x) * s, y: p.y + (v.y - p.y) * s };
+}
+// which way a prop's hidden bulk goes: toward the VP on both axes
+function extrudeDir(cx, cy) {
+  const v = vpPt();
+  return { x: Math.sign(v.x - cx) || 1, y: Math.sign(v.y - cy) || -1 };
+}
+// run draw() in a frame glued to a side wall at (t, fy): x runs along the
+// wall (foreshortened + slanted), y stays vertical — so flat art drawn
+// around the origin comes out lying in the wall's plane
+function inWallPlane(side, t, fy, draw) {
+  const pt = side === 'L' ? wallPtL : wallPtR;
+  const p = pt(t, fy);
+  const q = pt(t + 0.05, fy);
+  const ux = (q.x - p.x) / 0.05;
+  const uy = (q.y - p.y) / 0.05;
+  const ul = Math.hypot(ux, uy) || 1;
+  const squash = 0.62; // foreshortening along the wall
+  bgc.save();
+  bgc.transform((ux / ul) * squash, (uy / ul) * squash, 0, 1, p.x, p.y);
+  draw();
+  bgc.restore();
+}
+
+function drawKitchenRoom(now) {
+  const { W, H, bx0, bx1, by0, by1, U, P } = scene;
+  const cw = bx1 - bx0;
+  const ch = by1 - by0;
+
+  // --- room shell: soft pastel kitchen (kitchen4 palette) ---
+  fillQuad({ x: 0, y: 0 }, { x: W, y: 0 }, { x: bx1, y: by0 }, { x: bx0, y: by0 }, '#ece0c4'); // ceiling
+  fillQuad({ x: 0, y: 0 }, { x: bx0, y: by0 }, { x: bx0, y: by1 }, { x: 0, y: H }, '#9cc3d1'); // left wall (lit)
+  fillQuad({ x: W, y: 0 }, { x: bx1, y: by0 }, { x: bx1, y: by1 }, { x: W, y: H }, '#7aa0b1'); // right wall (shaded)
+  bgc.fillStyle = '#8cb3c2';
+  bgc.fillRect(bx0, by0, cw, ch); // back wall
+  bgc.fillStyle = '#dccca6'; // ceiling valance along the top of the back wall
+  bgc.fillRect(bx0, by0, cw, Math.max(3, P * 1.4));
+  // room edges
+  bgc.strokeStyle = 'rgba(70,55,40,0.4)';
+  bgc.lineWidth = 2;
+  for (const [a, b] of [
+    [{ x: 0, y: 0 }, { x: bx0, y: by0 }],
+    [{ x: W, y: 0 }, { x: bx1, y: by0 }],
+    [{ x: 0, y: H }, { x: bx0, y: by1 }],
+    [{ x: W, y: H }, { x: bx1, y: by1 }],
+  ]) {
+    bgc.beginPath();
+    bgc.moveTo(a.x, a.y);
+    bgc.lineTo(b.x, b.y);
+    bgc.stroke();
+  }
+  bgc.strokeRect(bx0, by0, cw, ch);
+
+  // --- warm wood plank floor, receding toward the back ---
+  const fpt = (fx, t) => ({ x: fx * W + (bx0 + fx * cw - fx * W) * t, y: H + (by1 - H) * t });
+  fillQuad(fpt(0, 0), fpt(1, 0), fpt(1, 1), fpt(0, 1), '#b0804a'); // base
+  const NR = 13; // narrow plank rows
+  const NPC = 8; // plank columns per row
+  const ease = (s) => s * (2 - s); // wider rows near the viewer
+  const plankCols = ['#b98a50', '#ab7c46', '#c49258', '#b2824a'];
+  for (let k = 0; k < NR; k++) {
+    const t0 = ease(k / NR);
+    const t1 = ease((k + 1) / NR);
+    const off = ((k * 3) % NPC) / NPC; // staggered plank ends
+    for (let s = -1; s < NPC; s++) {
+      const f0 = Math.max(0, s / NPC + off / NPC);
+      const f1 = Math.min(1, (s + 1) / NPC + off / NPC);
+      if (f1 <= f0) continue;
+      fillQuad(fpt(f0, t0), fpt(f1, t0), fpt(f1, t1), fpt(f0, t1), plankCols[(k * 5 + s * 3 + 400) % 4]);
+      const e = fpt(f1, (t0 + t1) / 2); // plank end seam
+      bgc.fillStyle = 'rgba(96,60,28,0.55)';
+      bgc.fillRect(e.x - 1, fpt(f1, t0).y, 2, fpt(f1, t1).y - fpt(f1, t0).y);
+    }
+    bgc.strokeStyle = 'rgba(96,60,28,0.6)'; // long seam between rows
+    const ra = fpt(0, t1);
+    const rb = fpt(1, t1);
+    bgc.beginPath();
+    bgc.moveTo(ra.x, ra.y);
+    bgc.lineTo(rb.x, rb.y);
+    bgc.stroke();
+    if (k % 4 === 1) { // occasional wood knot
+      const kn = fpt(((k * 7) % 10) / 10 + 0.05, (t0 + t1) / 2);
+      bgc.fillStyle = 'rgba(96,60,28,0.5)';
+      bgc.fillRect(kn.x, kn.y - 1, 4, 3);
+    }
+  }
+
+  // --- back wall: tile backsplash, night window, 3D counter with sink ---
+  const cty = by0 + ch * 0.68; // back counter top: its BACK edge, on the wall
+  const cDepth = Math.max(5, P * 3); // vertical drop from that edge to the front lip
+
+  // mint/cream checker backsplash tiles behind the counter
+  const bsTop = by0 + ch * 0.3;
+  const ts = P * 2;
+  for (let y = bsTop, r = 0; y < cty; y += ts, r++) {
+    for (let x = bx0, c = 0; x < bx1; x += ts, c++) {
+      bgc.fillStyle = (r + c) % 2 ? '#e6efe4' : '#cfe1d6';
+      bgc.fillRect(x, y, Math.min(ts, bx1 - x), Math.min(ts, cty - y));
+    }
+  }
+
+  // window with a warm valance, moon and stars
+  const wx0 = bx0 + cw * 0.36;
+  const wx1 = bx0 + cw * 0.64;
+  const wy0 = by0 + ch * 0.32;
+  const wy1 = by0 + ch * 0.55;
+  bgc.fillStyle = '#efe6cf'; // frame
+  bgc.fillRect(wx0 - P * 2, wy0 - P * 2, wx1 - wx0 + P * 4, wy1 - wy0 + P * 4);
+  bgc.fillStyle = '#14233c'; // night sky
+  bgc.fillRect(wx0, wy0, wx1 - wx0, wy1 - wy0);
+  bgc.fillStyle = '#eef2f8'; // crescent moon
+  bgc.beginPath();
+  bgc.arc(wx0 + (wx1 - wx0) * 0.68, wy0 + (wy1 - wy0) * 0.34, (wx1 - wx0) * 0.08, 0, Math.PI * 2);
+  bgc.fill();
+  bgc.fillStyle = '#14233c';
+  bgc.beginPath();
+  bgc.arc(wx0 + (wx1 - wx0) * 0.72, wy0 + (wy1 - wy0) * 0.29, (wx1 - wx0) * 0.066, 0, Math.PI * 2);
+  bgc.fill();
+  for (let i = 0; i < 12; i++) {
+    bgc.fillStyle = i === Math.floor(now / 500) % 12 ? '#ffffff' : 'rgba(255,255,255,0.5)';
+    bgc.fillRect(wx0 + 4 + ((i * 631) % (wx1 - wx0 - 8)), wy0 + 4 + ((i * 397) % (wy1 - wy0 - 8)), 2, 2);
+  }
+  bgc.fillStyle = '#efe6cf'; // mullions
+  bgc.fillRect((wx0 + wx1) / 2 - P / 2, wy0, P, wy1 - wy0);
+  bgc.fillRect(wx0, (wy0 + wy1) / 2 - P / 2, wx1 - wx0, P);
+  for (let x = wx0 - P * 3, i = 0; x < wx1 + P * 3; x += P * 2.2, i++) { // scalloped valance
+    bgc.fillStyle = i % 2 ? '#e08a8a' : '#f0e6d6';
+    bgc.beginPath();
+    bgc.arc(x + P, wy0 - P * 2, P * 1.3, 0, Math.PI);
+    bgc.fill();
+  }
+
+  // 3D countertop: the top surface runs from its back edge on the wall down
+  // and OUT toward the viewer (converging on the VP), so the base cabinets
+  // stand on the floor in front of the wall, wider than the back-wall span
+  const vP = vpPt();
+  const kC = cDepth / Math.max(1, cty - vP.y); // recession fraction of the counter run
+  // point on the counter top at back-wall x: u = 0 back edge .. 1 front lip
+  const ctp = (x, u) => ({ x: x + (x - vP.x) * kC * u, y: cty + (cty - vP.y) * kC * u });
+  const fLip0 = ctp(bx0, 1); // front lip corners
+  const fLip1 = ctp(bx1, 1);
+  bgc.fillStyle = '#efe6cf';
+  scenePath([{ x: bx0, y: cty }, { x: bx1, y: cty }, fLip1, fLip0]);
+  bgc.fill();
+  bgc.fillStyle = '#dccfb0'; // front thickness lip
+  bgc.fillRect(fLip0.x, fLip0.y, fLip1.x - fLip0.x, P * 1.8);
+  bgc.fillStyle = 'rgba(120,95,55,0.35)';
+  bgc.fillRect(fLip0.x, fLip0.y + P * 1.8, fLip1.x - fLip0.x, 2);
+  // teal lower cabinets, standing on the floor at the counter's depth
+  const cabTop = fLip0.y + P * 1.8 + 2;
+  const cabBot = by1 + (by1 - vP.y) * kC; // floor line at the cabinets' depth
+  const cabX = fLip0.x;
+  const cabW = fLip1.x - fLip0.x;
+  bgc.fillStyle = '#4f8f88';
+  bgc.fillRect(cabX, cabTop, cabW, cabBot - cabTop);
+  const doors = 5;
+  for (let i = 0; i < doors; i++) {
+    const dx0 = cabX + (cabW * i) / doors;
+    bgc.strokeStyle = '#3c706a';
+    bgc.lineWidth = 2;
+    bgc.strokeRect(dx0 + 2, cabTop + 2, cabW / doors - 4, cabBot - cabTop - 4);
+    bgc.fillStyle = '#5aa39b'; // recessed panel
+    bgc.fillRect(dx0 + P * 1.5, cabTop + P * 1.5, cabW / doors - P * 3, cabBot - cabTop - P * 3);
+    bgc.fillStyle = '#c9a24a'; // brass knob
+    bgc.fillRect(dx0 + cabW / doors / 2 - P / 2, cabTop + P * 2, P, P * 1.6);
+  }
+  bgc.fillStyle = 'rgba(40,30,20,0.35)'; // toe-kick shadow on the floor
+  bgc.fillRect(cabX, cabBot, cabW, P);
+
+  // sink: basin set INTO the receding countertop + arched faucet with a drip
+  const scx = (wx0 + wx1) / 2;
+  const sw = (wx1 - wx0) * 0.82;
+  const rimL = scx - sw / 2 - P;
+  const rimR = scx + sw / 2 + P;
+  fillQuad(ctp(rimL, 0.08), ctp(rimR, 0.08), ctp(rimR, 0.92), ctp(rimL, 0.92), '#dfe4ec'); // rim
+  fillQuad(ctp(rimL + P, 0.18), ctp(rimR - P, 0.18), ctp(rimR - P, 0.82), ctp(rimL + P, 0.82), '#9aa5b4'); // basin
+  // far inner wall of the basin sits in shade
+  fillQuad(ctp(rimL + P, 0.18), ctp(rimR - P, 0.18), ctp(rimR - P, 0.32), ctp(rimL + P, 0.32), '#6d7888');
+  const fb = ctp(scx + sw * 0.3, 0.14); // faucet base, on the back rim
+  bgc.strokeStyle = '#d8dee8';
+  bgc.lineCap = 'round';
+  bgc.lineWidth = Math.max(3, P * 1.2);
+  bgc.beginPath();
+  bgc.moveTo(fb.x, fb.y);
+  bgc.lineTo(fb.x, fb.y - P * 4.5); // riser
+  bgc.arc(fb.x - P * 2.2, fb.y - P * 4.5, P * 2.2, 0, Math.PI, true); // arch
+  bgc.lineTo(fb.x - P * 4.4, fb.y - P * 3);
+  bgc.stroke();
+  bgc.lineCap = 'butt';
+  const dripT = (now % 1300) / 1300; // falling water drop
+  if (dripT < 0.75) {
+    bgc.fillStyle = '#8fd0e8';
+    bgc.fillRect(fb.x - P * 4.4 - 1, fb.y - P * 3 + dripT * P * 4, 3, 5);
+  }
+
+  // props along the back counter — small 3D objects resting on the surface
+  const plt = ctp(bx0 + cw * 0.08, 0.5); // stack of plates, far left
+  bgc.fillStyle = '#f2ede2';
+  for (let i = 0; i < 3; i++) bgc.fillRect(plt.x - cw * 0.03, plt.y - i * (P + 1), cw * 0.06, P);
+  // cooktop: a dark slab with thickness, burners staggered front/back
+  const hobL = bx0 + cw * 0.14;
+  const hobR = bx0 + cw * 0.3;
+  fillQuad(ctp(hobL, 0.1), ctp(hobR, 0.1), ctp(hobR, 0.8), ctp(hobL, 0.8), '#3a3f47');
+  const he0 = ctp(hobL, 0.8);
+  const he1 = ctp(hobR, 0.8);
+  bgc.fillStyle = '#22262c'; // front edge thickness
+  bgc.fillRect(he0.x, he0.y, he1.x - he0.x, P);
+  for (const [bfx, bu] of [[0.2, 0.28], [0.25, 0.6]]) {
+    const bp = ctp(bx0 + cw * bfx, bu);
+    bgc.fillStyle = '#22262c'; // burners
+    bgc.beginPath();
+    bgc.ellipse(bp.x, bp.y, P * 2.2, P * 1.1, 0, 0, Math.PI * 2);
+    bgc.fill();
+    bgc.strokeStyle = '#4a5058';
+    bgc.lineWidth = 1.5;
+    bgc.stroke();
+  }
+  const cs = U * 0.42; // counter-prop base size
+  const kp = ctp(bx0 + cw * 0.2, 0.4); // kettle on the rear burner
+  contactShadow(kp.x, kp.y, cs * 1.3);
+  drawKettle(kp.x, kp.y, cs);
+  const brp = ctp(bx0 + cw * 0.77, 0.5); // bread loaf
+  drawBread(brp.x, brp.y, cs * 0.95);
+  const jp1 = ctp(bx0 + cw * 0.88, 0.38);
+  contactShadow(jp1.x, jp1.y, cs);
+  drawJar(jp1.x, jp1.y, cs * 0.95, '#cdb98a', '#9a7a3a');
+  const jp2 = ctp(bx0 + cw * 0.93, 0.62);
+  contactShadow(jp2.x, jp2.y, cs);
+  drawJar(jp2.x, jp2.y, cs * 0.88, '#b7c8e0', '#c0563e');
+
+  // 3D floating shelves flanking the window: thick boards sticking OUT of the
+  // wall — wood-grain top face, front edge, end cap, brackets — so the
+  // crockery has a real surface to stand on
+  const shelf3D = (x0, x1, y) => {
+    const th = Math.max(3, P * 1.4); // front board thickness
+    const dep = P * 2.2; // how far the board sticks out of the wall
+    const bk = (x) => x + (vP.x - x) * 0.06; // back edge converges toward the VP
+    bgc.fillStyle = '#5e3a1e'; // brackets against the wall
+    bgc.fillRect(x0 + (x1 - x0) * 0.14, y + th, P, P * 2.4);
+    bgc.fillRect(x1 - (x1 - x0) * 0.14 - P, y + th, P, P * 2.4);
+    // top face, with a grain line running along the wood
+    fillQuad({ x: x0, y }, { x: x1, y }, { x: bk(x1), y: y - dep }, { x: bk(x0), y: y - dep }, '#b98a50');
+    bgc.strokeStyle = 'rgba(96,60,28,0.45)';
+    bgc.lineWidth = 1;
+    bgc.beginPath();
+    bgc.moveTo((x0 + bk(x0)) / 2, y - dep / 2);
+    bgc.lineTo((x1 + bk(x1)) / 2, y - dep / 2);
+    bgc.stroke();
+    // end cap on the side facing away from the VP
+    const capX = (x0 + x1) / 2 < vP.x ? x0 : x1;
+    fillQuad({ x: capX, y }, { x: bk(capX), y: y - dep }, { x: bk(capX), y: y - dep + th }, { x: capX, y: y + th }, '#7a4f28');
+    bgc.fillStyle = '#946237'; // front edge
+    bgc.fillRect(x0, y, x1 - x0, th);
+    bgc.fillStyle = 'rgba(255,238,205,0.3)'; // top highlight
+    bgc.fillRect(x0, y, x1 - x0, 2);
+  };
+  const shelfDep = P * 2.2;
+  // place a prop centered on a shelf's TOP face (moved back off the front edge
+  // so it doesn't look like it's tipping off), grounded with a contact shadow
+  const onShelf = (fx, y, S, draw) => {
+    const cx = bx0 + cw * fx;
+    const by = y - shelfDep * 0.5; // middle of the top face
+    contactShadow(cx, by, S);
+    draw(cx, by);
+  };
+  const shA = by0 + ch * 0.34; // upper shelf line
+  const shB = by0 + ch * 0.56; // lower shelf line
+  shelf3D(bx0 + cw * 0.03, bx0 + cw * 0.29, shA);
+  shelf3D(bx0 + cw * 0.03, bx0 + cw * 0.29, shB);
+  shelf3D(bx0 + cw * 0.71, bx0 + cw * 0.97, shA);
+  shelf3D(bx0 + cw * 0.71, bx0 + cw * 0.97, shB);
+  const Sp = U * 0.5; // shelf prop base size
+  // upper-left: snake plant + mug ; lower-left: books + bottle + jar
+  onShelf(0.09, shA, Sp, (x, y) => drawPlant(x, y, Sp, 'snake'));
+  onShelf(0.21, shA, Sp * 0.8, (x, y) => drawMug(x, y, Sp * 0.82));
+  onShelf(0.08, shB, Sp, (x, y) => drawBooks(x, y, Sp * 0.82));
+  onShelf(0.19, shB, Sp * 0.7, (x, y) => drawBottle(x, y, Sp * 0.9));
+  onShelf(0.26, shB, Sp * 0.8, (x, y) => drawJar(x, y, Sp * 0.82, '#cdb98a', '#9a7a3a'));
+  // upper-right: bowl of fruit + books ; lower-right: jar + monstera
+  onShelf(0.8, shA, Sp, (x, y) => drawBowl(x, y, Sp * 0.95));
+  onShelf(0.92, shA, Sp * 0.8, (x, y) => drawBooks(x, y, Sp * 0.75, ['#5f85db', '#c0563e']));
+  onShelf(0.77, shB, Sp * 0.8, (x, y) => drawJar(x, y, Sp * 0.82, '#b7c8e0', '#c0563e'));
+  onShelf(0.9, shB, Sp, (x, y) => drawPlant(x, y, Sp, 'monstera'));
+
+  // pixelated wall clock (real time) on the right wall. A cast shadow plus a
+  // dark rim offset downward give it real thickness — it pops off the wall.
+  inWallPlane('R', 0.5, 0.14, () => {
+    bgc.fillStyle = 'rgba(20,30,45,0.26)'; // cast shadow, down-right
+    bgc.beginPath();
+    bgc.ellipse(U * 0.12, U * 0.13, U * 0.6, U * 0.6, 0, 0, Math.PI * 2);
+    bgc.fill();
+    bgc.fillStyle = '#2c2016'; // side/thickness: dark disc offset down
+    bgc.beginPath();
+    bgc.ellipse(0, U * 0.08, U * 0.56, U * 0.56, 0, 0, Math.PI * 2);
+    bgc.fill();
+    drawPixelClock(0, 0, U * 0.55, now);
+  });
+
+  // --- left wall: wooden pot rail with copper pans, framed pictures, floor plant ---
+  // the rail is a real beam sticking out of the wall: top face, front face,
+  // end cap and brackets, not a flat strip painted on the wall
+  const railFy = 0.22;
+  const railT0 = 0.34;
+  const railT1 = 0.8;
+  const railOut = (t) => U * (0.3 - t * 0.18); // protrusion, shrinking with depth
+  const rOff = (p, t) => ({ x: p.x + railOut(t), y: p.y + railOut(t) * 0.45 });
+  const rT0 = wallPtL(railT0, railFy);
+  const rT1 = wallPtL(railT1, railFy);
+  const rB0 = wallPtL(railT0, railFy + 0.018);
+  const rB1 = wallPtL(railT1, railFy + 0.018);
+  const fT0 = rOff(rT0, railT0);
+  const fT1 = rOff(rT1, railT1);
+  const fB0 = rOff(rB0, railT0);
+  const fB1 = rOff(rB1, railT1);
+  bgc.fillStyle = '#4e2f16'; // brackets tying the beam back to the wall
+  for (const bt of [0.4, 0.74]) {
+    const bp = wallPtL(bt, railFy + 0.018);
+    bgc.fillRect(bp.x, bp.y, Math.max(2, P * 0.7), U * 0.16);
+  }
+  fillQuad(rT0, rT1, fT1, fT0, '#9a6a38'); // top face
+  bgc.strokeStyle = 'rgba(96,60,28,0.5)'; // grain along the top
+  bgc.lineWidth = 1;
+  bgc.beginPath();
+  bgc.moveTo((rT0.x + fT0.x) / 2, (rT0.y + fT0.y) / 2);
+  bgc.lineTo((rT1.x + fT1.x) / 2, (rT1.y + fT1.y) / 2);
+  bgc.stroke();
+  fillQuad(fT0, fT1, fB1, fB0, '#7a4a26'); // front face
+  fillQuad(rT0, fT0, fB0, rB0, '#5e3a1e'); // near end cap
+  for (const [t, col, inner] of [[0.42, '#c17a4a', '#8a4e28'], [0.56, '#3a4048', '#22262c'], [0.69, '#c17a4a', '#8a4e28']]) {
+    const p = wallPtL(t, railFy + 0.026);
+    const s = U * (0.56 - t * 0.32); // smaller with depth
+    const hp = rOff(wallPtL(t, railFy + 0.018), t); // hook hangs off the beam's front
+    const pcx = p.x;
+    const pcy = p.y + s * 1.05; // pan center, below the hook
+    const pr = s * 0.8;
+    bgc.strokeStyle = '#4e2f16'; // hook down to the pan
+    bgc.lineWidth = 2;
+    bgc.beginPath();
+    bgc.moveTo(hp.x, hp.y);
+    bgc.lineTo(pcx, pcy - pr);
+    bgc.stroke();
+    drawPanPix(pcx, pcy, pr, col, inner); // pixelated pan, lifted off the wall
+  }
+  // two framed pictures hung high on the wall; a thin offset shadow lifts them
+  // a few pixels off the wall, with a slim frame (not a chunky border)
+  for (const [t, fy, sky, ground] of [[0.16, 0.3, '#a5d2e6', '#7fae6a'], [0.34, 0.33, '#f3c98a', '#5f8fb4']]) {
+    fillQuad(wallPtL(t + 0.006, fy + 0.008), wallPtL(t + 0.126, fy + 0.008), wallPtL(t + 0.126, fy + 0.168), wallPtL(t + 0.006, fy + 0.168), 'rgba(40,30,20,0.18)'); // thin lift shadow
+    fillQuad(wallPtL(t, fy), wallPtL(t + 0.12, fy), wallPtL(t + 0.12, fy + 0.16), wallPtL(t, fy + 0.16), '#efe6d2'); // slim cream frame
+    fillQuad(wallPtL(t + 0.009, fy + 0.012), wallPtL(t + 0.111, fy + 0.012), wallPtL(t + 0.111, fy + 0.093), wallPtL(t + 0.009, fy + 0.093), sky);
+    fillQuad(wallPtL(t + 0.009, fy + 0.093), wallPtL(t + 0.111, fy + 0.093), wallPtL(t + 0.111, fy + 0.148), wallPtL(t + 0.009, fy + 0.148), ground);
+    const sun = wallPtL(t + 0.08, fy + 0.045);
+    bgc.fillStyle = '#f5d84e';
+    bgc.fillRect(sun.x - 3, sun.y - 3, 6, 6);
+  }
+  // big monstera standing on the FLOOR, clear of the left wall — pixelated
+  const seam = wallPtL(0.55, 1); // wall-floor seam at the plant's depth
+  const mp = { x: seam.x + U * 1.6, y: seam.y + U * 0.28 };
+  bgc.fillStyle = 'rgba(60,35,15,0.3)';
+  bgc.beginPath();
+  bgc.ellipse(mp.x, mp.y, U * 1.15, U * 0.22, 0, 0, Math.PI * 2);
+  bgc.fill();
+  drawPlant(mp.x, mp.y, U * 0.95, 'monstera');
+
+  // --- fridge: a 3/4 box turned so its DOOR faces the COUNTER in the middle.
+  // The door is the big face that recedes toward the vanishing point (its top &
+  // bottom edges converge to the VP); the fridge's narrow front-right side is
+  // frontal, facing the viewer. So the doors clearly point at the island. ---
+  const fRx = W * 0.945; // frontal right-side outer edge
+  const fMx = W * 0.90; // near vertical edge (door ↔ right-side corner)
+  const fyTop = H * 0.3, fyBot = H * 0.9;
+  const dS = 0.3; // door depth: how far it recedes toward the VP
+  const dTL = recede({ x: fMx, y: fyTop }, dS); // door far-top-left (toward counter)
+  const dBL = recede({ x: fMx, y: fyBot }, dS); // door far-bottom-left
+  const lerpPt = (a, b, u) => ({ x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u });
+  // point inside the door trapezoid: u=0 left(opening)…1 right, v=0 top…1 bottom
+  const doorPt = (u, v) => lerpPt(lerpPt(dTL, { x: fMx, y: fyTop }, u), lerpPt(dBL, { x: fMx, y: fyBot }, u), v);
+  bgc.fillStyle = 'rgba(4,7,12,0.3)'; // floor shadow
+  scenePath([dBL, { x: fMx, y: fyBot }, { x: fRx, y: fyBot }, { x: fRx, y: fyBot + P * 2 }, { x: dBL.x - P, y: dBL.y + P * 2 }]);
+  bgc.fill();
+  // frontal right side (facing viewer, a bit shadowed)
+  fillQuad({ x: fMx, y: fyTop }, { x: fRx, y: fyTop }, { x: fRx, y: fyBot }, { x: fMx, y: fyBot }, shade('#e4dbc6', 0.82));
+  // door face — receding toward the counter/VP (lit, since it faces the light)
+  fillQuad(dTL, { x: fMx, y: fyTop }, { x: fMx, y: fyBot }, dBL, '#ece3ce');
+  bgc.strokeStyle = '#a89e86';
+  bgc.lineWidth = 2;
+  scenePath([dTL, { x: fMx, y: fyTop }, { x: fRx, y: fyTop }, { x: fRx, y: fyBot }, { x: fMx, y: fyBot }, dBL]);
+  bgc.stroke();
+  scenePath([dTL, { x: fMx, y: fyTop }, { x: fMx, y: fyBot }, dBL]);
+  bgc.stroke();
+  // freezer / fridge seam across the door, following its perspective tilt
+  bgc.beginPath();
+  const s0 = doorPt(0, 0.4), s1 = doorPt(1, 0.4);
+  bgc.moveTo(s0.x, s0.y);
+  bgc.lineTo(s1.x, s1.y);
+  bgc.stroke();
+  // vertical chrome-bar handles near the LEFT (opening) edge facing the counter
+  for (const [v0, v1] of [[0.05, 0.34], [0.46, 0.93]]) {
+    const a = doorPt(0.12, v0), b = doorPt(0.12, v1);
+    const bw = Math.max(3, P * 0.9);
+    bgc.fillStyle = '#b0a68f'; // cast shadow
+    fillQuad({ x: a.x + bw, y: a.y + 2 }, { x: a.x + bw * 1.5, y: a.y + 2 }, { x: b.x + bw * 1.5, y: b.y + 2 }, { x: b.x + bw, y: b.y + 2 }, '#b0a68f');
+    fillQuad({ x: a.x, y: a.y }, { x: a.x + bw, y: a.y }, { x: b.x + bw, y: b.y }, { x: b.x, y: b.y }, '#d9dee6');
+  }
+  bgc.fillStyle = '#3a3630'; // feet
+  bgc.fillRect(dBL.x + P, fyBot, P * 1.5, P);
+  bgc.fillRect(fRx - (fRx - fMx) - P * 1.5, fyBot, P * 1.5, P);
+  bgc.fillRect(fRx - P * 2.5, fyBot, P * 1.5, P);
+  // framed photos on the door (placed in door space so they sit on the face)
+  const pp = Math.max(3, Math.round(P * 1.2));
+  const ph1 = doorPt(0.42, 0.22), ph2 = doorPt(0.72, 0.42);
+  drawPixMap(PIX.photoLand.rows, PIX.photoLand.pal, ph1.x, ph1.y, pp);
+  drawPixMap(PIX.photoHeart.rows, PIX.photoHeart.pal, ph2.x, ph2.y, pp);
+  bgc.fillStyle = '#e94560';
+  bgc.fillRect(ph1.x - 2, ph1.y - 7 * pp - 3, 5, 5);
+  bgc.fillStyle = '#5f85db';
+  bgc.fillRect(ph2.x - 2, ph2.y - 7 * pp - 3, 5, 5);
+  // a pixelated potted plant sitting fully ON TOP of the fridge — its base
+  // rests on the top edge and it rises clear above, not over the doors
+  const ftop = doorPt(0.5, 0);
+  contactShadow(ftop.x, ftop.y, (fRx - dTL.x) * 0.42);
+  drawPlant(ftop.x, ftop.y, U * 0.44, 'bush');
+
+  // --- pendant lamps over the island + small ceiling lamps like kitchen4 ---
+  // shades are drawn as real volumes: banded cone, trim ring, and a bottom
+  // opening with the glowing bulb visible inside
+  scene.lamps = [];
+  for (const fx of [0.4, 0.6]) {
+    const px = W * fx;
+    const cordTop = by0 * 0.4; // ceiling at the island's depth
+    const sy = H * 0.3; // bottom of the shade
+    bgc.strokeStyle = '#6e4522';
+    bgc.lineWidth = 2;
+    bgc.beginPath();
+    bgc.moveTo(px, cordTop);
+    bgc.lineTo(px, sy - U * 0.55);
+    bgc.stroke();
+    drawShade(px, sy, U * 0.18, U * 0.5, U * 0.55);
+    scene.lamps.push({ x: px, y: sy });
+  }
+  for (const fx of [0.13, 0.87]) {
+    // little ceiling lamps in the front corners
+    const px = W * fx;
+    const sy = H * 0.065 + U * 0.32;
+    bgc.strokeStyle = '#6e4522';
+    bgc.lineWidth = 2;
+    bgc.beginPath();
+    bgc.moveTo(px, 0);
+    bgc.lineTo(px, sy - U * 0.32);
+    bgc.stroke();
+    drawShade(px, sy, U * 0.11, U * 0.3, U * 0.32);
+  }
+}
+
+// warm light pools from the pendants, drawn over the island so it looks lit
+function drawLampGlow() {
+  if (!scene.lamps) return;
+  const U = scene.U;
+  for (const l of scene.lamps) {
+    const g = bgc.createRadialGradient(l.x, l.y, 5, l.x, l.y, U * 6.5);
+    g.addColorStop(0, 'rgba(255,214,140,0.15)');
+    g.addColorStop(1, 'rgba(255,214,140,0)');
+    bgc.fillStyle = g;
+    bgc.fillRect(l.x - U * 6.5, l.y - U * 6.5, U * 13, U * 13);
+  }
+}
+
+// island cabinet front: drawer row on top, panelled doors below
 function drawCabinetFront(x0, y0, x1, y1) {
   const { U, P } = scene;
-  bgc.fillStyle = '#16213e'; // frame
+  bgc.fillStyle = '#3c706a'; // frame (dark teal)
   bgc.fillRect(x0, y0, x1 - x0, y1 - y0);
-  const dh = Math.min(U * 1.2, (y1 - y0) * 0.3);
+  const dh = Math.min(U * 0.9, (y1 - y0) * 0.34);
   const n = 3;
   const w = (x1 - x0) / n;
   for (let i = 0; i < n; i++) {
     const dx = Math.round(x0 + i * w + P);
     const dw = Math.round(w - P * 2);
     // drawer face + brass bar handle
-    bgc.fillStyle = '#33486e';
+    bgc.fillStyle = '#579f96';
     bgc.fillRect(dx, y0 + P, dw, dh - P * 2);
     bgc.fillStyle = '#c9a24a';
     bgc.fillRect(dx + dw / 2 - U * 0.5, y0 + dh / 2 - P / 2, U, P);
     // door with recessed panel groove
     const doorY = y0 + dh + P;
     const doorH = y1 - doorY - P;
-    bgc.fillStyle = '#2e4266';
+    bgc.fillStyle = '#4f8f88';
     bgc.fillRect(dx, doorY, dw, doorH);
-    bgc.fillStyle = '#1d2c4a';
+    bgc.fillStyle = '#437a74';
     bgc.fillRect(dx + P * 2, doorY + P * 2, dw - P * 4, doorH - P * 4);
-    bgc.fillStyle = '#33486e';
+    bgc.fillStyle = '#5aa39b';
     bgc.fillRect(dx + P * 3, doorY + P * 3, dw - P * 6, doorH - P * 6);
     // knob near the inner seam
     bgc.fillStyle = '#c9a24a';
@@ -482,71 +1435,100 @@ function drawCabinetFront(x0, y0, x1, y1) {
 }
 
 function drawCounter() {
-  const { H, left, right, frontY, topDepth, inset, thick, U, P } = scene;
+  const { left, right, frontY, topDepth, inset, thick, faceH, U, P } = scene;
   const backY = frontY - topDepth;
+  const bottomY = frontY + thick + faceH;
 
-  // countertop: pixel-stepped plank rows receding toward the back
-  const rowH = P * 2;
-  const planks = ['#c8935a', '#bf8a4f', '#d09a60'];
-  let pi = 0;
-  for (let y = frontY - rowH; y > backY - rowH; y -= rowH, pi++) {
-    const yy = Math.max(y, backY);
-    const h = y + rowH - yy;
-    const t = (frontY - yy) / topDepth;
-    const l = Math.round((left + inset * t) / P) * P;
-    const r = Math.round((right - inset * t) / P) * P;
-    bgc.fillStyle = planks[pi % 3];
-    bgc.fillRect(l, yy, r - l, h);
-    bgc.fillStyle = 'rgba(90,55,25,0.45)';
-    if (pi % 3 === 2) bgc.fillRect(l, yy, r - l, 1); // plank seam
-    const jx = l + P * 2 + ((pi * 977) % Math.max(1, r - l - P * 4)); // staggered joint
-    bgc.fillRect(jx, yy, 1, h);
-    bgc.fillStyle = '#8a5a2c'; // stepped side edges
-    bgc.fillRect(l, yy, P, h);
-    bgc.fillRect(r - P, yy, P, h);
-  }
-  bgc.fillStyle = '#5e3a1e'; // back rim
-  bgc.fillRect(left + inset, backY, right - left - inset * 2, Math.max(2, P / 2));
-  // crumbs scattered on the top
-  bgc.fillStyle = 'rgba(60,36,14,0.5)';
-  for (let i = 0; i < 24; i++) {
-    const t = ((i * 37) % 100) / 100;
-    bgc.fillRect(surfX(((i * 61) % 100) / 100, t), frontY - topDepth * t, 2, 2);
-  }
+  // shadow on the floor
+  bgc.fillStyle = 'rgba(4,7,16,0.5)';
+  bgc.fillRect(left - U * 0.3, bottomY, right - left + U * 0.6, P * 3);
 
-  // front edge (thickness lip): hard bands, no gradient
+  // countertop: smooth butcher-block trapezoid with grain lines
+  const tY = (t) => frontY - topDepth * t;
+  bgc.fillStyle = '#c8935a';
+  scenePath([
+    { x: left, y: frontY },
+    { x: right, y: frontY },
+    { x: surfX(1, 1), y: tY(1) },
+    { x: surfX(0, 1), y: tY(1) },
+  ]);
+  bgc.fill();
+  bgc.strokeStyle = 'rgba(110,70,32,0.4)'; // grain running left-right
+  bgc.lineWidth = 1;
+  for (let g = 1; g < 6; g++) {
+    const t = g / 6;
+    bgc.beginPath();
+    bgc.moveTo(surfX(0, t), tY(t));
+    bgc.lineTo(surfX(1, t), tY(t));
+    bgc.stroke();
+  }
+  bgc.fillStyle = '#8a5a2c'; // back rim
+  bgc.fillRect(surfX(0, 1), backY - 2, surfX(1, 1) - surfX(0, 1), 3);
+
+  // red gingham tablecloth over the middle of the island
+  const cl0 = 0.09;
+  const cl1 = 0.91;
+  const NCC = 14; // checker columns
+  const NRC = 7; // checker rows
+  scenePath([
+    { x: surfX(cl0, 0), y: frontY },
+    { x: surfX(cl1, 0), y: frontY },
+    { x: surfX(cl1, 1), y: tY(1) },
+    { x: surfX(cl0, 1), y: tY(1) },
+  ]);
+  bgc.fillStyle = '#f4efe4';
+  bgc.fill();
+  for (let r = 0; r < NRC; r++) {
+    for (let c = 0; c < NCC; c++) {
+      if ((r + c) % 2 === 0) continue;
+      const u0 = cl0 + ((cl1 - cl0) * c) / NCC;
+      const u1 = cl0 + ((cl1 - cl0) * (c + 1)) / NCC;
+      const t0 = r / NRC;
+      const t1 = (r + 1) / NRC;
+      fillQuad(
+        { x: surfX(u0, t0), y: tY(t0) },
+        { x: surfX(u1, t0), y: tY(t0) },
+        { x: surfX(u1, t1), y: tY(t1) },
+        { x: surfX(u0, t1), y: tY(t1) },
+        r % 2 ? '#d96a6a' : '#e08a8a'
+      );
+    }
+  }
+  // cloth flap hanging over the front lip
+  const flapL = surfX(cl0, 0);
+  const flapR = surfX(cl1, 0);
+  const flapH = thick + P * 3;
+  const fcw = (flapR - flapL) / NCC;
+  for (let c = 0; c < NCC; c++) {
+    for (let r = 0; r < 3; r++) {
+      bgc.fillStyle = (r + c) % 2 ? (r % 2 ? '#c95c5c' : '#d0716f') : '#e8e2d2';
+      bgc.fillRect(flapL + c * fcw, frontY + (flapH / 3) * r, fcw + 1, flapH / 3 + 1);
+    }
+  }
+  bgc.fillStyle = '#b04848'; // hem
+  bgc.fillRect(flapL, frontY + flapH, flapR - flapL, 2);
+
+  // exposed wooden lip left and right of the cloth
   bgc.fillStyle = '#9a6a38';
-  bgc.fillRect(left, frontY, right - left, thick);
+  bgc.fillRect(left, frontY, flapL - left, thick);
+  bgc.fillRect(flapR, frontY, right - flapR, thick);
   bgc.fillStyle = '#e2b57e';
-  bgc.fillRect(left, frontY, right - left, P);
-  bgc.fillStyle = '#6e4a20';
-  bgc.fillRect(left, frontY + thick - P, right - left, P);
+  bgc.fillRect(left, frontY, flapL - left, P);
+  bgc.fillRect(flapR, frontY, right - flapR, P);
 
-  // cabinet body (top overhangs) + toe-kick
-  const cabL = left + U * 0.4;
-  const cabR = right - U * 0.4;
-  const toe = U * 0.6;
-  drawCabinetFront(cabL, frontY + thick, cabR, H - toe);
-  bgc.fillStyle = '#0a1020';
-  bgc.fillRect(cabL + U * 0.3, H - toe, cabR - cabL - U * 0.6, toe);
+  // cabinet face (top overhangs) down to the floor
+  const cabL = left + U * 0.3;
+  const cabR = right - U * 0.3;
+  drawCabinetFront(cabL, frontY + thick, cabR, bottomY);
 
-  // striped towel hanging over the lip
-  const twx = Math.round(surfX(0.13, 0) / P) * P;
-  for (let i = 0; i < 9; i++) {
-    bgc.fillStyle = i % 3 === 1 ? '#b03a44' : '#e4e8ef';
-    bgc.fillRect(twx, frontY - P + i * P, P * 6, P);
-  }
-
-  // props on the countertop: knife block, utensil jar, salt & pepper
-  drawPixMap(PIX.block.rows, PIX.block.pal, surfX(0.06, 0.6), frontY - topDepth * 0.6, P);
-  drawPixMap(PIX.jar.rows, PIX.jar.pal, surfX(0.94, 0.6), frontY - topDepth * 0.6, P);
-  drawPixMap(PIX.shakers.rows, PIX.shakers.pal, surfX(0.9, 0.22), frontY - topDepth * 0.22, P);
+  // a chef's knife resting near the back corner
+  drawPixMap(PIX.knife.rows, PIX.knife.pal, surfX(0.88, 0.78), frontY - topDepth * 0.78, P);
 }
 
 function drawDish(d, now) {
   const { x, y } = dishBase(d);
   const U = scene.U;
-  const dp = Math.max(2, Math.round(scene.P * 0.8)); // dish pixel size
+  const dp = scene.dp; // dish pixel size, sized so dishes never crowd
   const pix = PIX[d.kind];
   const w = pix.rows[0].length * dp;
 
@@ -572,7 +1554,9 @@ function drawDish(d, now) {
     bgc.fillRect(x - w / 2 - dp, y - dp * 2, w + dp * 2, dp);
     base = y - dp;
   }
-  const m = drawPixMap(pix.rows, pix.pal, x, base, dp);
+  const sideCol = d.kind === 'cake' ? '#b07a44' : d.kind === 'pancake' ? '#9a6a2e' : '#8a5a26';
+  const ddir = extrudeDir(x, base - U);
+  const m = drawPixMap3D(pix.rows, pix.pal, x, base, dp, sideCol, ddir.x, ddir.y);
   const topY = m.y0;
 
   // label + name floating above the dish (label bobs in pixel steps)
@@ -592,7 +1576,7 @@ function drawDish(d, now) {
   bgc.textAlign = 'left';
 
   // hit region for slicing (screen space)
-  d._hit = { x, y: (y + topY) / 2, r: U * 1.4 };
+  d._hit = { x, y: (y + topY) / 2, r: scene.hitR };
 }
 
 // distance from segment a→b to point p
@@ -620,9 +1604,10 @@ function dishUnderCut(a, b) {
 
 function drawKitchen(now) {
   sceneLayout();
-  drawKitchenRoom();
+  drawKitchenRoom(now);
   drawCounter();
   for (const d of [...DISHES].sort((a, b) => a.fx - b.fx)) drawDish(d, now);
+  drawLampGlow();
 
   // aim line + highlight of the dish being crossed
   if (sceneAim) {
