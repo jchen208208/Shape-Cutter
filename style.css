@@ -75,41 +75,21 @@ button {
   pointer-events: none;
   animation: rise 0.7s 0.6s ease-out both;
 }
-/* hanging wooden sign that holds the title + tagline */
+/* compact title block pinned to the very top, floating over the picture */
 .sign {
   position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin-top: 5vh;
-  padding: 18px 30px 14px;
-  background: linear-gradient(#a06e3c, #8a5a30);
-  border: 4px solid #5e3a1e;
-  border-radius: 8px;
-  box-shadow: 0 10px 24px rgba(60, 35, 10, 0.35), inset 0 2px 0 rgba(255, 226, 180, 0.35);
+  margin-top: 8px;
   animation: rise 0.7s ease-out both;
-}
-.sign::before,
-.sign::after {
-  content: '';
-  position: absolute;
-  top: -7.2vh;
-  width: 3px;
-  height: 7.2vh;
-  background: #4e2f16;
-}
-.sign::before {
-  left: 18%;
-}
-.sign::after {
-  right: 18%;
 }
 .title {
   margin: 0;
   line-height: 0;
 }
 .title canvas {
-  max-width: min(80vw, 640px);
+  max-width: min(50vw, 418px);
   image-rendering: pixelated;
 }
 .slice-line {
@@ -123,14 +103,15 @@ button {
 }
 .tagline {
   font-family: 'Pixelify Sans', monospace;
-  font-size: 17px;
+  font-size: 13px;
   letter-spacing: 0.5px;
-  color: #f2e2c4;
-  margin: 12px 0 0;
+  color: #fdf3e0;
+  text-shadow: 1px 2px 0 rgba(58, 43, 28, 0.85);
+  margin: 7px 0 0;
   animation: rise 0.7s 0.2s ease-out both;
 }
 .tagline-accent {
-  color: #e94560;
+  color: #ffb3a0;
 }
 .menu {
   display: flex;
@@ -335,7 +316,7 @@ button {
 }
 @keyframes slice {
   to {
-    width: min(260px, 60vw);
+    width: min(170px, 42vw);
   }
 }
 
@@ -345,6 +326,6 @@ button {
     transition: none !important;
   }
   .slice-line {
-    width: min(260px, 60vw);
+    width: min(170px, 42vw);
   }
 }
