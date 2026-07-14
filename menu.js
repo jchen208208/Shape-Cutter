@@ -234,6 +234,7 @@ function drawSlash(now) {
 }
 
 function drawBackground(now, dt) {
+  if (window.DIMBG_OWNS_BG) return; // dimbg.js animates this page's backdrop
   bgc.clearRect(0, 0, bg.width, bg.height);
   if (LANDING) {
     drawKitchen(now);
