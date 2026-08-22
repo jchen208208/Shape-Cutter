@@ -1,5 +1,5 @@
-// 3D food mode: the 2D pixel sprites extruded into voxel models — same
-// foods, same palette, now with volume.
+// 3D food mode: the same pixel sprites as the 2D game, extruded into voxels.
+// Same foods and same palette, just with a thickness now.
 
 function makeTarget3D() {
   const sprite = roughenSprite(buildSprite(FOODS[Math.floor(Math.random() * FOODS.length)]));

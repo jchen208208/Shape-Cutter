@@ -1,18 +1,15 @@
-// The cutting engine: pure geometry, no canvas or DOM,
-// so `node tests.js` can run it directly.
+// The cutting engine. Pure geometry, no canvas and no DOM, so the tests can require it directly.
 
 const EPS = 1e-9;
 
-// Half-plane test: sign of the cross product (B−A) × (P−A).
-// > 0 → P is on one side of the infinite line through A,B; < 0 → the other;
-// 0 → P is exactly on the line.
+// Which side of the line AB the point P is on, via the sign of the cross product (B−A) × (P−A).
+// Zero means P is sitting exactly on the line.
 function side(a, b, p) {
   return (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
 }
 
-// Where the infinite line through A,B crosses the segment P→Q.
-// Only valid when P and Q are on opposite sides (s1 and s2 have opposite
-// signs), which makes the denominator safely nonzero.
+// Where the line AB crosses the segment PQ.
+// Only call this when P and Q are on opposite sides, which is what keeps the denominator away from zero.
 function lineSegmentIntersection(a, b, p, q) {
   const s1 = side(a, b, p);
   const s2 = side(a, b, q);
@@ -20,10 +17,9 @@ function lineSegmentIntersection(a, b, p, q) {
   return { x: p.x + t * (q.x - p.x), y: p.y + t * (q.y - p.y) };
 }
 
-// One pass of Sutherland–Hodgman against a single half-plane.
-// keepSign +1 keeps points where side() >= 0, −1 keeps the other side.
-// Points within EPS of the line count as inside for BOTH passes, so a cut
-// through a vertex puts that vertex in both pieces (and areas still sum).
+// One Sutherland-Hodgman pass against a single half-plane.
+// keepSign of +1 keeps everything where side() >= 0, and −1 keeps the other half.
+// Anything within EPS of the line counts as inside on both passes, so cutting straight through a vertex puts it in both pieces and the areas still add up.
 function clipHalfPlane(points, a, b, keepSign) {
   const out = [];
   const n = points.length;
@@ -40,15 +36,13 @@ function clipHalfPlane(points, a, b, keepSign) {
   return out;
 }
 
-// Split a polygon by the infinite line through A,B → [piece, piece].
-// If the line misses the polygon, one piece is the whole polygon and the
-// other is empty (fewer than 3 vertices).
+// Split a polygon along the line AB.
+// If the line misses entirely you get the whole polygon back as one piece and fewer than 3 vertices as the other.
 function splitPolygon(points, a, b) {
   return [clipHalfPlane(points, a, b, 1), clipHalfPlane(points, a, b, -1)];
 }
 
-// Shoelace formula. Positive for our winding convention; callers that only
-// care about size should Math.abs() it.
+// Shoelace. Comes out positive for the winding we use, so Math.abs it if you only want the size.
 function polygonArea(points) {
   let sum = 0;
   for (let i = 0; i < points.length; i++) {

@@ -1,26 +1,24 @@
-// Shape mode: random polygons for the shared game shell in game.js.
-// Loaded before game.js, which calls makeTarget() and uses the canvas/ctx
-// globals it defines.
+// Shape mode: random polygons for the shell in game.js.
+// This has to load first, since game.js calls makeTarget() and leans on the canvas and ctx globals.
 
-// Walk angles 0→2π in random-ish steps, place each vertex at a random radius.
-// Ordering vertices by increasing angle fixes our winding convention: the
-// shoelace formula will come out positive for every shape we generate.
+// Step around the circle in uneven jumps, dropping a vertex at a random radius each time.
+// Going in order of increasing angle is what pins down the winding, so the shoelace area always comes out positive.
 function randomPolygon() {
   const cx = canvas.width / 2;
   const cy = canvas.height / 2;
-  const n = 6 + Math.floor(Math.random() * 4); // 6–9 vertices
+  const n = 6 + Math.floor(Math.random() * 4); // somewhere between 6 and 9 vertices
 
-  // n random step sizes, normalized so they sum to 2π
+  // random step sizes, scaled at the end so they add up to a full turn
   const steps = [];
   let total = 0;
   for (let i = 0; i < n; i++) {
-    const s = 0.5 + Math.random(); // each step between 0.5x and 1.5x average
+    const s = 0.5 + Math.random(); // half to one and a half times the average gap
     steps.push(s);
     total += s;
   }
 
   const points = [];
-  // radius scales with the window so shapes fill a similar share of any screen
+  // scale off the window so a shape takes up about the same amount of any screen
   const scale = Math.min(canvas.width, canvas.height) / 600;
   let angle = Math.random() * Math.PI * 2;
   for (let i = 0; i < n; i++) {
@@ -34,12 +32,11 @@ function randomPolygon() {
   return points;
 }
 
-// Dents (reflex vertices) are allowed, but only mild ones. The raw cross
-// product scales with edge lengths, so it can't measure "dent depth" on its
-// own — atan2(cross, dot) of the two edge vectors gives the actual turn angle
-// at the vertex, which is scale-free. Positive turn = convex corner (with our
-// winding), negative = dent.
-const MAX_DENT = 0.6; // radians (~35°) — deepest dent we accept
+// Dents are fine, but only shallow ones.
+// The cross product on its own is useless for this because it scales with the edge lengths.
+// atan2(cross, dot) of the two edges gives the actual turn angle at the corner, which doesn't care how long they are.
+// Positive is a convex corner and negative is a dent.
+const MAX_DENT = 0.6; // radians, so about 35°
 
 function dentsAreMild(points) {
   const n = points.length;
@@ -58,7 +55,7 @@ function dentsAreMild(points) {
   return true;
 }
 
-// Shift the polygon so its bounding box is centered in the canvas
+// nudge the whole thing so its bounding box sits in the middle of the canvas
 function centerInCanvas(points) {
   const xs = points.map((p) => p.x);
   const ys = points.map((p) => p.y);

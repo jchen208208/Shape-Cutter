@@ -1,8 +1,7 @@
-// Animated backdrop for a dimension's pages: <body data-dim="1|2|3"> picks
-// the scene, drawn on the #bg canvas (created here if the page has none).
-// Each dimension gets a world that speaks its geometry — 1D: positions on a
-// line, 2D: flat shapes on graph paper, 3D: perspective depth — all dark and
-// quiet enough to sit behind gameplay.
+// Animated backdrop for the dimension pages.
+// data-dim on the body picks which scene to draw, onto the #bg canvas, which gets created here if the page doesn't have one.
+// Each one is built out of whatever that dimension actually has: positions on a line for 1D, flat shapes on graph paper for 2D, and perspective for 3D.
+// All kept dark enough to sit behind the game without competing with it.
 (() => {
   const DIM = +document.body.dataset.dim || 0;
   if (!DIM) return;
@@ -13,7 +12,7 @@
     cv.id = 'bg';
     document.body.prepend(cv);
   }
-  window.DIMBG_OWNS_BG = true; // menu.js leaves the #bg canvas to us
+  window.DIMBG_OWNS_BG = true; // tells menu.js to keep its hands off the #bg canvas
   const c = cv.getContext('2d');
   let W = 0;
   let H = 0;
@@ -37,7 +36,7 @@
     c.fillRect(0, 0, W, H);
   }
 
-  // --- 1D: everything is a position along a line ---
+  // 1D, where the only thing that exists is a position along a line
   function draw1D(now) {
     base();
     const rows = 7;
@@ -52,7 +51,7 @@
       c.stroke();
 
       if (main) {
-        // the number line: ruler ticks, taller every fifth
+        // the line itself, with ruler ticks that get taller every fifth one
         c.strokeStyle = 'rgba(140, 165, 205, 0.13)';
         c.beginPath();
         for (let x = 24, k = 0; x < W; x += 46, k++) {
@@ -63,7 +62,7 @@
         c.stroke();
       }
 
-      // an interval that lives on this line: [====] sliding slowly
+      // an interval sliding slowly along it
       if (i % 3 === 1) {
         const len = 60 + hash(i + 40) * 70;
         const ix = ((now * (0.008 + hash(i + 9) * 0.008) + hash(i + 20) * W * 3) % (W + len + 160)) - len - 80;
@@ -80,7 +79,7 @@
         c.lineWidth = 1;
       }
 
-      // glowing beads: points traveling their one and only axis
+      // beads drifting along, since one axis is all they get
       for (let b = 0; b < 2; b++) {
         const sp = 0.012 + hash(i * 3 + b) * 0.02;
         const dir = hash(i * 7 + b) > 0.5 ? 1 : -1;
@@ -101,7 +100,7 @@
     }
   }
 
-  // --- 2D: flat shapes living on graph paper ---
+  // 2D, flat shapes on graph paper
   function draw2D(now) {
     base();
     const step = 26;
@@ -121,7 +120,7 @@
       c.stroke();
     }
 
-    // flat polygons adrift on the plane — no shading, no depth, pure area
+    // polygons drifting about, deliberately flat shaded so they read as pure area
     for (let i = 0; i < 4; i++) {
       const n = 3 + i;
       const R = 55 + hash(i + 3) * 85;
@@ -142,7 +141,7 @@
       c.stroke();
     }
 
-    // little x/y axes in the corner: the plane's compass
+    // small x/y axes down in the corner
     const ax = 30;
     const ay = H - 30;
     c.strokeStyle = 'rgba(170, 179, 208, 0.16)';
@@ -167,7 +166,7 @@
     c.fillText('y', ax - 3, ay - 52);
   }
 
-  // --- 3D: a perspective floor and floating wireframe solids ---
+  // 3D, a floor in perspective with wireframe solids floating over it
   const SOLIDS = [
     { // cube
       v: [[-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1], [-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]],
@@ -195,7 +194,7 @@
     c.fillStyle = glow;
     c.fillRect(0, hy - H * 0.16, W, H * 0.36);
 
-    // floor: rails converging on the vanishing point...
+    // rails running off to the vanishing point
     c.strokeStyle = 'rgba(201, 163, 92, 0.055)';
     c.lineWidth = 1;
     c.beginPath();
@@ -204,7 +203,7 @@
       c.lineTo(W / 2 + i * W * 0.16, H + 30);
     }
     c.stroke();
-    // ...and depth rows flowing gently toward the camera
+    // and rows crossing them, drifting toward the camera
     const flow = (now / 2600) % 1;
     c.beginPath();
     for (let k = 0; k < 11; k++) {
@@ -217,7 +216,7 @@
     }
     c.stroke();
 
-    // far specks above the horizon
+    // specks up above the horizon to give it some depth
     for (let i = 0; i < 26; i++) {
       const sx = hash(i + 71) * W;
       const sy = hash(i + 137) * hy * 0.85;
@@ -226,7 +225,7 @@
       c.fillRect(sx, sy, 2, 2);
     }
 
-    // wireframe solids hovering at different depths
+    // the solids themselves, sat at a few different depths
     for (let i = 0; i < 3; i++) {
       const s = SOLIDS[i];
       const scale = [52, 34, 40][i];

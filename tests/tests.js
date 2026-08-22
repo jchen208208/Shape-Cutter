@@ -1,5 +1,5 @@
-// Run with: node tests.js
-const { side, splitPolygon, polygonArea } = require('./engine.js');
+// Run with: node tests/tests.js
+const { side, splitPolygon, polygonArea } = require('../js/shared/engine.js');
 
 let failures = 0;
 function assertClose(actual, expected, label, tol = 1e-6) {
@@ -11,7 +11,7 @@ function assertClose(actual, expected, label, tol = 1e-6) {
   }
 }
 
-// --- shoelace on shapes we can verify by hand ---
+// shoelace, on shapes simple enough to check by hand
 const square = [
   { x: 0, y: 0 },
   { x: 1, y: 0 },
@@ -27,15 +27,16 @@ const triangle = [
 ];
 assertClose(polygonArea(triangle), 6, '4x3 right triangle area = 6');
 
-// --- half-plane test ---
+// which side of a line a point falls on
 const a = { x: 0, y: 0 };
-const b = { x: 1, y: 0 }; // the x-axis
+const b = { x: 1, y: 0 }; // so a to b is the x-axis
 assertClose(Math.sign(side(a, b, { x: 0.5, y: 1 })), 1, 'point above x-axis → +');
 assertClose(Math.sign(side(a, b, { x: 0.5, y: -1 })), -1, 'point below x-axis → −');
 assertClose(side(a, b, { x: 7, y: 0 }), 0, 'point on the line → 0');
 
-// --- splitting, hand-verifiable cases ---
-// vertical line x = 0.25 through the unit square → areas 0.25 and 0.75
+// splitting, again on cases with known answers
+
+// x = 0.25 through the unit square should give 0.25 and 0.75
 {
   const [p1, p2] = splitPolygon(square, { x: 0.25, y: -5 }, { x: 0.25, y: 5 });
   const areas = [Math.abs(polygonArea(p1)), Math.abs(polygonArea(p2))].sort();
@@ -43,14 +44,14 @@ assertClose(side(a, b, { x: 7, y: 0 }), 0, 'point on the line → 0');
   assertClose(areas[1], 0.75, 'square cut at x=0.25: large piece');
 }
 
-// line exactly through two opposite vertices → two triangles of 0.5
+// straight through two opposite corners gives two triangles of 0.5
 {
   const [p1, p2] = splitPolygon(square, { x: 0, y: 0 }, { x: 1, y: 1 });
   assertClose(Math.abs(polygonArea(p1)), 0.5, 'diagonal through vertices: piece 1');
   assertClose(Math.abs(polygonArea(p2)), 0.5, 'diagonal through vertices: piece 2');
 }
 
-// line that misses the polygon entirely → one full piece, one empty
+// a line that misses completely leaves one whole piece and one empty one
 {
   const [p1, p2] = splitPolygon(square, { x: 5, y: 0 }, { x: 5, y: 1 });
   const areas = [Math.abs(polygonArea(p1)), Math.abs(polygonArea(p2))].sort();
@@ -58,7 +59,7 @@ assertClose(side(a, b, { x: 7, y: 0 }), 0, 'point on the line → 0');
   assertClose(areas[1], 1, 'miss: other piece is the whole square');
 }
 
-// line collinear with an edge: grazes the square, cuts nothing off
+// a line lying along an edge grazes it and takes nothing off
 {
   const [p1, p2] = splitPolygon(square, { x: -3, y: 0 }, { x: 5, y: 0 });
   const areas = [Math.abs(polygonArea(p1)), Math.abs(polygonArea(p2))].sort();
@@ -66,8 +67,8 @@ assertClose(side(a, b, { x: 7, y: 0 }), 0, 'point on the line → 0');
   assertClose(areas[1], 1, 'edge graze: whole square intact');
 }
 
-// --- the big one: random polygons + random cuts, pieces must sum ---
-// (same generation method as the game, minus the canvas)
+// The real test: throw random cuts at random polygons and check the pieces still add up.
+// Same generation the game uses, just without the canvas.
 function randomPolygon() {
   const n = 6 + Math.floor(Math.random() * 4);
   const steps = [];
@@ -99,8 +100,8 @@ for (let i = 0; i < 1000; i++) {
 }
 assertClose(worst, 0, '1000 random cuts: piece areas sum to original (worst error)', 1e-6);
 
-// cuts passing exactly through two of the polygon's own vertices — the
-// classic precision war story, at scale
+// Cuts that go exactly through two of the polygon's own vertices.
+// This is where floating point normally falls over, so it's worth hammering.
 let worstVertex = 0;
 for (let i = 0; i < 500; i++) {
   const poly = randomPolygon();
@@ -114,14 +115,13 @@ for (let i = 0; i < 500; i++) {
 }
 assertClose(worstVertex, 0, '500 vertex-through cuts conserve area (worst error)', 1e-6);
 
-// --- food sprites: each must be one connected blob, its traced outline must
-// cover at least its pixel count (equal, except the donut whose hole is
-// included in the outline), and cuts through it must conserve area.
-// Roughening is random per serving, so the same invariants are re-checked
-// on 25 fresh roughened instances of every food. ---
-const { FOODS, buildSprite, roughenSprite, FOOD_N } = require('./foods.js');
+// Food sprites have to hold three things at once.
+// Each one is a single connected blob, its traced outline covers at least as much area as it has pixels, and cutting it conserves area.
+// The outline is normally exactly equal, the donut being the exception since its hole ends up inside the outline.
+// Roughening is random every serving, so all of it gets rechecked on 25 fresh versions of every food.
+const { FOODS, buildSprite, roughenSprite, FOOD_N } = require('../js/shared/foods.js');
 
-// returns a problem description, or null if the sprite passes all invariants
+// gives back what went wrong, or null if the sprite is fine
 function foodProblem(cells, polygon, cutTrials) {
   const filled = [];
   for (let y = 0; y < FOOD_N; y++) {
@@ -181,7 +181,7 @@ for (const food of FOODS) {
   }
 }
 
-// --- 1D strings: cuts must conserve arc length, and queries must behave ---
+// 1D strings: cuts conserve arc length, and the queries do what they claim
 const {
   buildString,
   nearestOnPolyline,
@@ -189,7 +189,7 @@ const {
   polylineSwipeCut,
   clampSwipe,
   cutPolyline,
-} = require('./strings.js');
+} = require('../js/1d/strings.js');
 
 {
   let worst1d = 0;
@@ -205,13 +205,13 @@ const {
   assertClose(worst1d, 0, '300 random string cuts conserve length (worst error)', 1e-6);
   assertClose(pieces1dOk ? 1 : 0, 1, 'every string cut yields two drawable pieces');
 
-  // a swipe far away from the string never cuts
+  // a swipe nowhere near the string shouldn't cut anything
   const s = buildString(400, 300);
   const miss = polylineSwipeCut(s.pts, { x: 5000, y: 5000 }, { x: 5010, y: 5010 });
   assertClose(miss === null ? 1 : 0, 1, 'far-away swipe misses the string');
 
-  // the string's endpoints sit on opposite sides of the origin, so at least
-  // one of a vertical or horizontal swipe through center must cross it
+  // The endpoints sit on opposite sides of the origin.
+  // So a swipe through the centre has to cross it, going either vertically or horizontally.
   const hit =
     polylineSwipeCut(s.pts, { x: 0, y: -1000 }, { x: 0, y: 1000 }) ||
     polylineSwipeCut(s.pts, { x: -1000, y: 0 }, { x: 1000, y: 0 });
@@ -219,8 +219,7 @@ const {
   const near = nearestOnPolyline(s.pts, s.pts[Math.floor(s.pts.length / 2)]);
   assertClose(near.dist, 0, 'nearest point to an on-string point is itself', 1e-9);
 
-  // the clamped swipe must never cross the string twice, and must respect
-  // both the raw drag length and the max reach
+  // The clamped swipe can never cross twice, and it has to stay inside both the actual drag length and the max reach.
   let worstCrossings = 0;
   let lenOk = true;
   for (let i = 0; i < 500; i++) {
@@ -235,8 +234,8 @@ const {
   assertClose(lenOk ? 1 : 0, 1, 'clamped swipe respects drag length and max reach');
 }
 
-// --- 3D solids: clipping and volume math must be exact ---
-const S3 = require('./solids.js');
+// 3D solids: the clipping and volume maths has to be exact, not close
+const S3 = require('../js/3d/solids.js');
 
 {
   assertClose(S3.polyVolume(S3.boxPoly(0, 0, 0, 1, 1, 1)), 1, 'unit box volume = 1');
@@ -249,7 +248,7 @@ const S3 = require('./solids.js');
   );
   assertClose(S3.polyVolume(diag), 0.595, 'diagonal box clip → 0.595');
 
-  // random clips must conserve volume and match numeric integration
+  // random clips conserve volume, and agree with integrating it numerically
   let worstSum = 0;
   let worstNumeric = 0;
   for (let i = 0; i < 300; i++) {
@@ -277,7 +276,7 @@ const S3 = require('./solids.js');
   assertClose(worstSum, 0, '300 random box clips conserve volume (worst)', 1e-9);
   assertClose(worstNumeric < 0.012 ? 1 : 0, 1, 'clip volumes match numeric integration');
 
-  // random solids: split volumes conserve
+  // same for the lumpy random solids
   let worstMesh = 0;
   for (let i = 0; i < 100; i++) {
     const solid = S3.buildSolid();
@@ -291,7 +290,7 @@ const S3 = require('./solids.js');
   }
   assertClose(worstMesh, 0, '100 random solid splits conserve volume (worst)', 1e-9);
 
-  // voxel foods: splits conserve, total = voxel count
+  // and for voxel foods, where the total should just be the number of voxels
   let worstVox = 0;
   for (const food of FOODS.slice(0, 5)) {
     const vox = S3.voxelizeCells(buildSprite(food).cells, FOOD_N);
@@ -306,15 +305,15 @@ const S3 = require('./solids.js');
   }
   assertClose(worstVox, 0, 'voxel food splits conserve volume (worst)', 1e-6);
 
-  // the swipe→plane transform round-trips: a world point on the plane
-  // projects onto the screen line it came from
+  // Turning a swipe into a plane should round-trip.
+  // Take a world point on that plane, project it back to the screen, and it should land on the line you drew.
   for (let i = 0; i < 50; i++) {
     const yaw3 = Math.random() * 6;
     const pitch3 = (Math.random() - 0.5) * 2;
     const a = { x: Math.random() * 800, y: Math.random() * 600 };
     const b = { x: Math.random() * 800, y: Math.random() * 600 };
     const plane = S3.planeFromScreenLine(a, b, yaw3, pitch3, 400, 300, 120);
-    // midpoint of the screen line, unprojected at depth 0, must satisfy the plane
+    // unproject the middle of the screen line at depth 0 and it should satisfy the plane
     const mid = { x: ((a.x + b.x) / 2 - 400) / 120, y: ((a.y + b.y) / 2 - 300) / 120, z: 0 };
     const w = S3.viewToWorld(mid, yaw3, pitch3);
     const err = Math.abs(S3.v3.dot(plane.n, w) - plane.d);

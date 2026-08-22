@@ -1,7 +1,5 @@
-// Shared game shell for both modes: rounds, aiming, the cut, the reveal
-// animation, scoring, and the results screen. The mode script loaded before
-// this file (shapes.js or foods.js) supplies
-// makeTarget() → { polygon, drawWhole(), drawPiece(points, i) }.
+// The game shell both 2D modes run on: rounds, aiming, the cut, the reveal and the scoring.
+// Whichever mode script loaded first, shapes.js or foods.js, supplies makeTarget(), which hands back the polygon and the two draw callbacks.
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -33,7 +31,7 @@ function getCanvasPoint(event) {
   };
 }
 
-// average of the vertices — good enough to place a label inside a piece
+// just the average of the vertices, which is close enough to drop a label on
 function labelPoint(points) {
   let x = 0;
   let y = 0;
@@ -44,7 +42,7 @@ function labelPoint(points) {
   return { x: x / points.length, y: y / points.length };
 }
 
-// the cut is an infinite line, so draw it well past both points
+// the cut is an infinite line, so run it well past both ends
 function drawLine(a, b, style) {
   const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
   const ux = (b.x - a.x) / len;
@@ -57,10 +55,9 @@ function drawLine(a, b, style) {
   ctx.stroke();
 }
 
-// Outlined text so labels stay readable over any colors. Letters use the
-// pixel font; digits, %, . and / render in the digital-clock font
-// (Orbitron). Text is split into runs and each run measured so the mix
-// still comes out centered on x.
+// Outlined text, so labels stay readable whatever colour ends up behind them.
+// Letters use the pixel font and digits, %, . and / use Orbitron.
+// Mixing fonts breaks normal centring, so the string gets split into runs and each one measured separately.
 const DIGITAL_CHARS = /[0-9%./]/;
 
 function drawLabel(text, x, y, size = 16, color = '#fff') {
@@ -101,11 +98,11 @@ function scoreColor(s) {
   return '#e94560';
 }
 
-// --- cut effects: knife + crumbs (food), laser + sparks (shapes) ---
+// Cut effects. Food gets a knife and crumbs, shapes get a laser and sparks.
 
 let fx = null;
 
-// where the infinite cut line enters and exits the polygon — the sweep path
+// where the cut line enters and leaves the polygon, which is the path the knife sweeps along
 function cutSpan(polygon, a, b) {
   const hits = [];
   for (let i = 0; i < polygon.length; i++) {
@@ -131,20 +128,20 @@ function startCutFx() {
     e1,
     kind: target.fx || 'laser',
     colors: target.fxColors || [],
-    sweep: target.fx === 'knife' ? 0.35 : 0.25, // seconds to cross the shape
+    sweep: target.fx === 'knife' ? 0.35 : 0.25, // seconds to get across the shape
     particles: [],
     carry: 0,
   };
 }
 
-// chunky pixel knife, drawn in a frame rotated to the cut direction
+// chunky pixel knife, drawn in a frame already rotated to the cut direction
 function drawKnife(pos, ang, alpha, prog) {
   const s = Math.min(canvas.width, canvas.height) / 600;
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.translate(pos.x, pos.y);
   ctx.rotate(ang);
-  ctx.translate(0, -Math.abs(Math.sin(prog * Math.PI * 5)) * 3 * s); // chop bob
+  ctx.translate(0, -Math.abs(Math.sin(prog * Math.PI * 5)) * 3 * s); // bobs up and down as it chops
   ctx.scale(s, s);
   ctx.fillStyle = '#d8dee9'; // blade
   ctx.fillRect(-34, -13, 36, 10);
@@ -175,7 +172,7 @@ function updateAndDrawFx(t, dt) {
   const nx = -Math.sin(ang);
   const ny = Math.cos(ang);
 
-  // emit particles from the tip while it sweeps
+  // throw particles off the tip as it goes
   if (prog < 1 && fx.particles.length < 260) {
     fx.carry += dt * (fx.kind === 'knife' ? 150 : 240);
     while (fx.carry >= 1) {
@@ -202,7 +199,7 @@ function updateAndDrawFx(t, dt) {
     p.age += dt;
     p.x += p.vx * dt;
     p.y += p.vy * dt;
-    if (fx.kind === 'knife') p.vy += 500 * dt; // crumbs fall
+    if (fx.kind === 'knife') p.vy += 500 * dt; // crumbs fall, sparks don't
   }
   fx.particles = fx.particles.filter((p) => p.age < p.life);
   for (const p of fx.particles) {
@@ -257,8 +254,7 @@ function updateAndDrawFx(t, dt) {
   }
 }
 
-// --- game state ---
-// state: 'aim' → 'reveal' (pieces sliding apart) → next round … → 'over'
+// aim, then reveal while the pieces slide apart, then the next round, and eventually over
 let state = 'aim';
 let round = 1;
 let total = 0;
@@ -292,7 +288,7 @@ function attemptCut(p) {
   const a1 = Math.abs(polygonArea(p1));
   const a2 = Math.abs(polygonArea(p2));
   const whole = Math.abs(polygonArea(target.polygon));
-  // a graze that shaves off a sliver below 0.1% of the area counts as a miss
+  // shaving off less than 0.1% of the area isn't a cut, it's a graze
   if (p1.length < 3 || p2.length < 3 || Math.min(a1, a2) < whole * 0.001) {
     message = 'Missed — try again';
     return;
@@ -315,9 +311,9 @@ function attemptCut(p) {
 
 function drawReveal(t, dt) {
   const sweep = fx ? fx.sweep : 0;
-  const st = t - sweep; // time since the sweep finished the cut
+  const st = t - sweep; // how long since the sweep actually finished the cut
 
-  // screen shake at the moment the cut lands
+  // shake the screen the moment it lands
   let sx = 0;
   let sy = 0;
   if (st >= 0 && st < 0.15) {
@@ -328,7 +324,7 @@ function drawReveal(t, dt) {
   ctx.save();
   ctx.translate(sx, sy);
 
-  // pieces hold together until the sweep passes, then slide apart
+  // pieces stay put until the sweep has gone by, then come apart
   const k = easeOutCubic(Math.min(Math.max(st, 0) / 0.7, 1)) * 22;
   pieces.forEach((piece, i) => {
     const s = i === 0 ? 1 : -1;
@@ -382,7 +378,7 @@ function drawGameOver() {
 function draw(now, dt) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // HUD chips, top-right (top-left belongs to the back-to-menu link)
+  // HUD chips go top-right, because top-left is where the back link lives
   ctx.fillStyle = 'rgba(15, 52, 96, 0.8)';
   ctx.strokeStyle = '#3a3f5c';
   ctx.beginPath();
@@ -397,7 +393,7 @@ function draw(now, dt) {
     target.drawWhole();
     if (cutA) {
       if (mouse) {
-        // marching-ants aim line
+        // marching ants along the aim line
         ctx.save();
         ctx.setLineDash([12, 9]);
         ctx.lineDashOffset = -now / 24;
@@ -423,7 +419,7 @@ function draw(now, dt) {
   }
 }
 
-// pointer events unify mouse and touch (with touch-action: none in CSS)
+// pointer events cover mouse and touch in one go, as long as CSS sets touch-action: none
 canvas.addEventListener('pointerdown', (event) => {
   event.preventDefault();
   const p = getCanvasPoint(event);
@@ -436,7 +432,7 @@ canvas.addEventListener('pointerdown', (event) => {
   }
 
   if (state === 'reveal') {
-    // brief lockout so the reveal isn't skipped by accident
+    // short lockout, otherwise you skip the reveal by accident
     if ((performance.now() - revealStart) / 1000 < 1.0) return;
     if (round >= ROUNDS) {
       state = 'over';
@@ -452,7 +448,7 @@ canvas.addEventListener('pointerdown', (event) => {
     message = '';
     return;
   }
-  // ignore a second tap in basically the same spot (no line defined)
+  // second tap in basically the same spot doesn't define a line, so ignore it
   if (Math.hypot(p.x - cutA.x, p.y - cutA.y) < 2) return;
   attemptCut(p);
 });
@@ -462,7 +458,7 @@ canvas.addEventListener('pointermove', (event) => {
   mouse = getCanvasPoint(event);
 });
 
-// press R while aiming to reset the anchor and start the cut over
+// r while aiming drops the anchor and starts the cut again
 window.addEventListener('keydown', (event) => {
   if (event.key.toLowerCase() !== 'r' || state !== 'aim' || !cutA) return;
   cutA = null;

@@ -1,10 +1,9 @@
-// Food mode: pixel-art food sprites for the shared game shell in game.js.
-// Each food is painted onto a 24×24 grid with tiny shape primitives (one
-// shared palette, every sprite sized to fill the grid), then its silhouette
-// is traced into a polygon so the engine can cut it with exact area math.
-// The sprite is rendered clipped to each piece polygon.
+// Food mode: pixel-art sprites for the shell in game.js.
+// Each food gets painted onto a 24x24 grid out of a handful of primitives, all off one palette and all sized to fill the grid.
+// Then its silhouette gets traced into a polygon, which is what the engine actually cuts, so the area maths stays exact.
+// Drawing just clips the sprite to whichever piece polygon it belongs to.
 
-const FOOD_N = 24; // grid is FOOD_N × FOOD_N cells
+const FOOD_N = 24; // grid is this many cells square
 const FOOD_SCALE = 14; // canvas pixels per cell
 
 const C = {
@@ -43,9 +42,9 @@ const C = {
   black: '#3f3a36',
 };
 
-// Painting helpers over a grid. Tests are against cell centers (x+0.5,
-// y+0.5); painting with color null erases (that's how the donut hole and the
-// croissant's crescent bite are made).
+// Painting helpers.
+// Everything tests against cell centres rather than corners, so a disc of radius 2 covers what you'd expect.
+// Painting with a null colour erases instead, which is how the donut gets its hole and the croissant its bite.
 function painter(g) {
   const put = (x, y, c) => {
     if (x >= 0 && x < FOOD_N && y >= 0 && y < FOOD_N) g[y][x] = c;
@@ -272,7 +271,7 @@ const FOODS = [
   },
 ];
 
-// --- roughening: organic edges + texture, fresh randomness per serving ---
+// Roughening, so no two servings of the same food come out identical.
 
 function shade(hex, f) {
   const v = parseInt(hex.slice(1), 16);
@@ -283,22 +282,21 @@ function shade(hex, f) {
 }
 
 const N4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-// the 8 neighbors in cyclic order — consecutive ring cells are 4-adjacent
+// the 8 neighbours in a ring, ordered so consecutive ones touch edge to edge
 const RING = [[-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]];
 
-// Copy the base sprite, nick and bump its silhouette at random, then shade.
-// A nick is only allowed where the filled cells around it form a single
-// unbroken run of the ring, which guarantees removal can never split the
-// blob — so the connectivity invariant survives any random seed.
+// Copy the base sprite, chew up the edges at random, then shade it.
+// A cell can only be nicked out if its filled neighbours form one unbroken run around the ring.
+// That's the bit that guarantees removing it can't split the blob in two, whatever the random seed does.
 function roughenSprite(base) {
   const cells = base.cells.map((row) => row.slice());
   const filled = (x, y) => x >= 0 && x < FOOD_N && y >= 0 && y < FOOD_N && cells[y][x] !== null;
 
-  // nicks: eat the occasional boundary cell
+  // eat the occasional edge cell
   for (let y = 0; y < FOOD_N; y++) {
     for (let x = 0; x < FOOD_N; x++) {
       if (!filled(x, y)) continue;
-      if (N4.every(([dx, dy]) => filled(x + dx, y + dy))) continue; // interior
+      if (N4.every(([dx, dy]) => filled(x + dx, y + dy))) continue; // fully surrounded, so not an edge cell
       if (Math.random() > 0.14) continue;
       const ring = RING.map(([dx, dy]) => filled(x + dx, y + dy));
       let runs = 0;
@@ -339,7 +337,7 @@ function roughenSprite(base) {
   return { name: base.name, cells, polygon: traceOutline(cells) };
 }
 
-// --- silhouette tracing ---
+// tracing the silhouette out into a polygon
 
 function loopArea(points) {
   let sum = 0;
@@ -363,11 +361,10 @@ function simplifyLoop(loop) {
   return out;
 }
 
-// Trace the outline of the filled cells as a polygon in grid coordinates.
-// Every boundary between a filled and an empty cell becomes a directed unit
-// edge; chaining edges start→end forms closed loops. The largest loop is the
-// outer silhouette. Inner loops (the donut hole) are ignored — the hole
-// still counts as donut for area purposes, which is fine for a ratio score.
+// Trace the outline of the filled cells into a polygon, in grid coordinates.
+// Every boundary between a filled cell and an empty one becomes a directed unit edge, and chaining those end to end gives closed loops.
+// The biggest loop is the outer silhouette and the rest get thrown away.
+// That means the donut's hole counts as donut when measuring area, which is fine when the score is only ever a ratio.
 function traceOutline(cells) {
   const filled = (x, y) => x >= 0 && x < FOOD_N && y >= 0 && y < FOOD_N && cells[y][x] !== null;
   const edges = new Map();
@@ -409,8 +406,8 @@ function traceOutline(cells) {
       const outs = edges.get(k);
       let idx = 0;
       if (outs.length > 1) {
-        // pinch point (two regions touching diagonally): take the tightest
-        // right turn so we keep hugging the region on our right
+        // Two regions touching at a diagonal, so there's more than one way out of this corner.
+        // Take the tightest right turn, which keeps us hugging the same region.
         let best = -Infinity;
         for (let i = 0; i < outs.length; i++) {
           const cross = dx * (outs[i].y - cy) - dy * (outs[i].x - cx);
@@ -446,7 +443,7 @@ function buildSprite(food) {
   return spriteCache.get(food.name);
 }
 
-// --- the mode interface used by game.js (browser only below this point) ---
+// Everything below here is what game.js actually calls, and it needs a browser.
 
 function drawFood(cells, o, s) {
   for (let y = 0; y < FOOD_N; y++) {
@@ -460,9 +457,8 @@ function drawFood(cells, o, s) {
 
 function makeTarget() {
   const sprite = roughenSprite(buildSprite(FOODS[Math.floor(Math.random() * FOODS.length)]));
-  // cell size scales with the window; offset and size are captured here so
-  // the drawn sprite and the cut polygon can never disagree (e.g. after a
-  // window resize mid-round)
+  // Cell size follows the window, so the offset and size get captured once here and reused.
+  // Otherwise a resize mid-round would leave the drawn sprite and the cut polygon disagreeing about where the food is.
   const s = FOOD_SCALE * (Math.min(canvas.width, canvas.height) / 600);
   const o = {
     x: (canvas.width - FOOD_N * s) / 2,
@@ -473,7 +469,7 @@ function makeTarget() {
     y: o.y + p.y * s,
   }));
 
-  // this food's own colors, for the crumb particles when it gets cut
+  // hand the food's own colours through, so the crumbs match when it gets cut
   const fxColors = [];
   for (const row of sprite.cells) {
     for (const c of row) {

@@ -1,8 +1,8 @@
-// 1D geometry: random strings (open curves as dense polylines), arc length,
-// nearest-point and swipe-crossing queries, and cutting. Pure — no canvas or
-// DOM — so `node tests.js` can run it directly.
+// 1D geometry: random strings, arc length, nearest-point and crossing queries, and the cut itself.
+// A string is just an open curve stored as a dense polyline.
+// Pure, no canvas and no DOM, so the tests can require it directly.
 
-// Catmull-Rom interpolation between p1 and p2 (p0, p3 are neighbors)
+// Catmull-Rom between p1 and p2, with p0 and p3 as the neighbours on either side
 function catmullSample(p0, p1, p2, p3, t) {
   const t2 = t * t;
   const t3 = t2 * t;
@@ -22,7 +22,7 @@ function catmullSample(p0, p1, p2, p3, t) {
   };
 }
 
-// smooth open curve through the control points, sampled densely
+// smooth curve through all the control points, sampled densely enough to treat as straight segments
 function smoothChain(ctrl, perSegment) {
   const ext = [ctrl[0], ...ctrl, ctrl[ctrl.length - 1]];
   const pts = [];
@@ -35,7 +35,7 @@ function smoothChain(ctrl, perSegment) {
   return pts;
 }
 
-// cumulative arc length at each point; cum[0] = 0, cum[n-1] = total
+// running arc length at each point, so cum[0] is 0 and the last one is the total
 function polylineCum(pts) {
   const cum = [0];
   for (let i = 1; i < pts.length; i++) {
@@ -44,8 +44,8 @@ function polylineCum(pts) {
   return { cum, total: cum[cum.length - 1] };
 }
 
-// A random string centered on the origin, fitting in a w×h box:
-// mostly wavy splines, sometimes a straight segment, randomly rotated.
+// A random string centred on the origin and fitting inside a w by h box.
+// Usually a wavy spline, occasionally just a straight segment, and rotated at random either way.
 function buildString(w, h) {
   let ctrl = [];
   if (Math.random() < 0.2) {
@@ -71,7 +71,7 @@ function buildString(w, h) {
   return { pts, cum, total };
 }
 
-// closest point on the polyline to p → { dist, index, t, point }
+// nearest point on the polyline to p, plus which segment it landed on
 function nearestOnPolyline(pts, p) {
   let best = null;
   for (let i = 0; i < pts.length - 1; i++) {
@@ -92,7 +92,7 @@ function nearestOnPolyline(pts, p) {
   return best;
 }
 
-// all crossings of segment A→B with the polyline, sorted along the swipe
+// every place the swipe AB crosses the string, in the order the swipe hits them
 function swipeCrossings(pts, a, b) {
   const abx = b.x - a.x;
   const aby = b.y - a.y;
@@ -103,7 +103,7 @@ function swipeCrossings(pts, a, b) {
     const pqx = q.x - p.x;
     const pqy = q.y - p.y;
     const denom = abx * pqy - aby * pqx;
-    if (Math.abs(denom) < 1e-12) continue; // parallel
+    if (Math.abs(denom) < 1e-12) continue; // parallel, so no crossing
     const u = ((p.x - a.x) * pqy - (p.y - a.y) * pqx) / denom; // along swipe
     const v = ((p.x - a.x) * aby - (p.y - a.y) * abx) / -denom; // along segment
     if (u < 0 || u > 1 || v < 0 || v > 1) continue;
@@ -113,14 +113,14 @@ function swipeCrossings(pts, a, b) {
   return hits;
 }
 
-// where segment A→B first crosses the polyline, or null
+// the first place the swipe crosses the string, or null if it misses
 function polylineSwipeCut(pts, a, b) {
   return swipeCrossings(pts, a, b)[0] || null;
 }
 
-// The swipe the player is actually allowed: capped at maxLen, and stopped
-// halfway between the first and second crossing — so one swipe can never
-// sever two strands of a tangled string.
+// How much of the swipe actually counts.
+// It's capped at maxLen and stopped halfway between the first and second crossing.
+// That's what stops a single swipe cutting two strands of a tangled string at once.
 function clampSwipe(pts, a, b, maxLen) {
   const raw = Math.hypot(b.x - a.x, b.y - a.y);
   if (raw < 1e-9) return { end: { x: b.x, y: b.y }, len: 0 };
@@ -136,7 +136,7 @@ function clampSwipe(pts, a, b, maxLen) {
   return { end, len };
 }
 
-// cut at segment `index`, parameter `t` → two polylines and their lengths
+// cut at the given segment and position along it, giving back two polylines and their lengths
 function cutPolyline(pts, cum, index, t) {
   const p = pts[index];
   const q = pts[index + 1];

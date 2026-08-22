@@ -1,6 +1,6 @@
-// 1D mode game shell: a random string appears, one tap or short swipe cuts
-// it at a point, and the score is how close the two arc lengths are to 50/50.
-// Rounds, HUD and reveal mirror the 2D shell in game.js.
+// 1D game shell.
+// A random string turns up, one tap or a short swipe cuts it at a point, and the score is how close the two lengths are to an even split.
+// Rounds, HUD and the reveal all work the same way as the 2D shell in game.js.
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -15,7 +15,7 @@ addEventListener('resize', sizeCanvas);
 const ROUNDS = 5;
 const easeOutCubic = (t) => 1 - (1 - t) ** 3;
 
-// gradient color pairs — each string wears a random one
+// gradient pairs, one picked at random per string
 const STRING_COLORS = [
   ['#e94560', '#f5a623'],
   ['#5f85db', '#7df9ff'],
@@ -25,8 +25,8 @@ const STRING_COLORS = [
   ['#7df9ff', '#ee87b2'],
 ];
 
-// outlined mixed-font text (same convention as game.js: letters pixel,
-// digits and %./ in the digital font)
+// Outlined text mixing two fonts, same as game.js does it.
+// Letters get the pixel font, and digits and %./ get the digital one.
 const DIGITAL_CHARS = /[0-9%./]/;
 
 function drawLabel(text, x, y, size = 16, color = '#fff') {
@@ -105,7 +105,7 @@ function drawString(pts, colors) {
   }
 }
 
-// point at a given arc length along a piece (for the % labels)
+// walk along a piece to a given arc length, used to place the % labels
 function pointAtArc(pts, arc) {
   let acc = 0;
   for (let i = 0; i < pts.length - 1; i++) {
@@ -122,14 +122,13 @@ function pointAtArc(pts, arc) {
   return pts[pts.length - 1];
 }
 
-// --- game state ---
-let state = 'aim'; // 'aim' → 'reveal' → … → 'over'
+let state = 'aim'; // aim, then reveal, round after round, then over
 let round = 1;
 let total = 0;
 let target = makeString();
-let swipe = null; // { a, end, hit } — end is clamped, hit is the predicted cut
+let swipe = null; // end is the clamped version, hit is where we think the cut lands
 
-// the knife's reach: a swipe can never span the page
+// how far a single swipe can reach, so you can't just drag across the whole page
 const maxSwipe = () => Math.min(canvas.width, canvas.height) * 0.28;
 let cut = null; // result of cutPolyline + normal/pcts/score
 let sparks = [];
@@ -173,7 +172,7 @@ function applyCut(hit) {
 }
 
 function drawReveal(t, dt) {
-  // screen shake as the cut lands
+  // shake the screen as it lands
   let sx = 0;
   let sy = 0;
   if (t < 0.12) {
@@ -184,7 +183,7 @@ function drawReveal(t, dt) {
   ctx.save();
   ctx.translate(sx, sy);
 
-  // the two halves recoil along the string's own direction — 1D separation
+  // halves push apart along the string itself, since that's the only direction there is in 1D
   const k = easeOutCubic(Math.min(t / 0.6, 1)) * 16;
   [cut.p1, cut.p2].forEach((piece, i) => {
     const s = i === 0 ? -1 : 1;
@@ -201,7 +200,7 @@ function drawReveal(t, dt) {
     ctx.restore();
   });
 
-  // flash tick across the cut point
+  // quick flash across the cut point
   if (t < 0.25) {
     ctx.save();
     ctx.globalAlpha = 1 - t / 0.25;
@@ -295,7 +294,7 @@ function draw(now, dt) {
       ctx.arc(swipe.end.x, swipe.end.y, 3, 0, Math.PI * 2);
       ctx.fill();
       if (swipe.hit) {
-        // pulsing ring on the exact point this swipe will cut
+        // ring pulsing on the exact point this swipe would cut
         ctx.strokeStyle = '#fff';
         ctx.beginPath();
         ctx.arc(swipe.hit.point.x, swipe.hit.point.y, 8 + Math.sin(now / 140) * 2, 0, Math.PI * 2);
@@ -336,8 +335,8 @@ canvas.addEventListener('pointerdown', (event) => {
 canvas.addEventListener('pointermove', (event) => {
   if (state !== 'aim' || !swipe) return;
   const raw = { x: event.clientX, y: event.clientY };
-  // the swipe is clamped live: capped reach, and stopped before it could
-  // ever touch a second strand
+  // Clamped as you drag, not on release.
+  // Capped reach, and stopped before it could ever reach a second strand.
   swipe.end = clampSwipe(target.pts, swipe.a, raw, maxSwipe()).end;
   swipe.hit = polylineSwipeCut(target.pts, swipe.a, swipe.end);
 });
@@ -348,7 +347,7 @@ canvas.addEventListener('pointerup', () => {
   swipe = null;
 
   if (Math.hypot(end.x - a.x, end.y - a.y) < 6) {
-    // a tap: snap to the nearest point on the string, if close enough
+    // a tap rather than a drag, so snap to the nearest point if it's close enough
     const near = nearestOnPolyline(target.pts, a);
     if (near && near.dist <= 26) {
       applyCut(near);

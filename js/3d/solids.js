@@ -1,10 +1,8 @@
-// 3D geometry: vectors, convex polyhedron clipping and volume, random
-// star-shaped solids, voxelized food sprites, and plane-splitting with exact
-// volumes. Pure — no canvas or DOM — so `node tests.js` can run it directly.
+// 3D geometry: vectors, clipping convex polyhedra, random lumpy solids, voxelised food sprites, and splitting any of it by a plane with exact volumes.
+// Pure, no canvas and no DOM, so the tests can require it directly.
 //
-// Planes are { n, d } with the surface at dot(n, x) = d; the "+" side keeps
-// dot(n, x) >= d. Convex polyhedra are { verts: [{x,y,z}], faces: [[i,...]] }
-// with faces wound outward (positive signed volume).
+// A plane is { n, d }, sitting at dot(n, x) = d, and the side we call positive is dot(n, x) >= d.
+// A convex polyhedron is verts plus faces indexing into them, always wound outward so the signed volume comes out positive.
 
 const EPS3 = 1e-9;
 
@@ -28,8 +26,8 @@ const v3 = {
   }),
 };
 
-// signed volume of a closed, outward-wound polyhedron (divergence theorem:
-// fan each face into triangles, sum dot(a, cross(b, c)) / 6)
+// Signed volume of a closed outward-wound polyhedron, via the divergence theorem.
+// Fan each face into triangles and sum dot(a, cross(b, c)) / 6.
 function polyVolume(poly) {
   let v6 = 0;
   for (const f of poly.faces) {
@@ -41,7 +39,7 @@ function polyVolume(poly) {
   return v6 / 6;
 }
 
-// axis-aligned box as a convex polyhedron
+// an axis-aligned box, in the same convex polyhedron form as everything else
 function boxPoly(x0, y0, z0, x1, y1, z1) {
   return {
     verts: [
@@ -65,12 +63,10 @@ function boxPoly(x0, y0, z0, x1, y1, z1) {
   };
 }
 
-// Clip a convex polyhedron, keeping dot(n, x) >= d. Each face is clipped
-// Sutherland–Hodgman style; the directed exit→entry chords land on the
-// plane and chain into the cap face. Returns null if nothing remains.
-// Precondition: the plane must not pass exactly through a vertex (the cap
-// chain skips on-plane vertices). Fine here — game planes come from
-// freehand swipes, never snapped to geometry.
+// Clip a convex polyhedron down to the positive side of a plane, or null if there's nothing left.
+// Every face gets clipped Sutherland-Hodgman style, and the chords those clips leave behind all lie on the plane, so they chain together into the cap face.
+// One thing to watch: the plane must not pass exactly through a vertex, because the cap chain skips on-plane vertices.
+// Not a problem in the game, where planes come from freehand swipes and never snap to the geometry.
 function clipConvex(poly, n, d) {
   const dist = poly.verts.map((v) => v3.dot(n, v) - d);
   if (dist.every((x) => x >= -EPS3)) return poly;
@@ -97,9 +93,8 @@ function clipConvex(poly, n, d) {
   };
 
   const faces = [];
-  // Cap loop: each clipped face's boundary traverses its chord exit→entry,
-  // so the cap face (sharing those chords, wound outward) must traverse
-  // them entry→exit.
+  // Each clipped face runs its chord from exit to entry.
+  // The cap shares those same chords and has to wind outward too, so it runs them the other way round.
   const capNext = new Map();
   for (const face of poly.faces) {
     const out = [];
@@ -135,9 +130,7 @@ function clipConvex(poly, n, d) {
   return { verts, faces };
 }
 
-// --- random star-shaped solids ---
-
-// octahedron subdivided `level` times, projected to the unit sphere
+// octahedron subdivided a few times and pushed out onto the unit sphere
 function baseSphere(level) {
   let verts = [
     { x: 1, y: 0, z: 0 },
@@ -179,8 +172,8 @@ function baseSphere(level) {
   return { verts, tris };
 }
 
-// A random lumpy solid: per-vertex radii, smoothed so it stays star-shaped
-// around the origin (which makes the volume math below exact).
+// A random lumpy solid, made by shoving each vertex in or out by a random amount.
+// The smoothing keeps it star-shaped around the origin, which is what lets the volume maths below be exact rather than approximate.
 function buildSolid() {
   const { verts, tris } = baseSphere(2);
   let r = verts.map(() => 0.65 + Math.random() * 0.7);
@@ -217,8 +210,8 @@ function meshVolume(verts, tris) {
   return v6 / 6;
 }
 
-// exact volumes on both sides of a plane, by clipping the center-fan
-// tetrahedra of a star-shaped mesh
+// Exact volume either side of a plane.
+// Works by fanning the mesh into tetrahedra from the centre and clipping each one, which is only valid because the solid is star-shaped.
 function meshSideVolumes(verts, tris, plane) {
   const o = { x: 0, y: 0, z: 0 };
   let plus = 0;
@@ -235,13 +228,12 @@ function meshSideVolumes(verts, tris, plane) {
   return { plus, minus: total - plus, total };
 }
 
-// clip a triangle mesh to one side of a plane for display: returns the
-// surviving surface polygons plus the cap loop(s) across the cut
+// Same idea but for display rather than volume: the surface polygons that survive, plus the cap across the cut face.
 function clipMeshBySide(verts, tris, plane, side) {
   const n = side > 0 ? plane.n : { x: -plane.n.x, y: -plane.n.y, z: -plane.n.z };
   const d = side > 0 ? plane.d : -plane.d;
   const polys = [];
-  const chords = new Map(); // exit key → { from, to } points on the plane
+  const chords = new Map(); // keyed by exit edge, holding the two points where the cut crosses
   const keyOf = (p) => `${p.x.toFixed(5)},${p.y.toFixed(5)},${p.z.toFixed(5)}`;
 
   for (const [a, b, c] of tris) {
@@ -290,9 +282,9 @@ function clipMeshBySide(verts, tris, plane, side) {
   return { polys, caps };
 }
 
-// --- voxel foods: extrude a 24×24 pixel sprite into blocky 3D ---
+// Voxel foods: take a 24x24 pixel sprite and give it a thickness.
 
-// depth per column from its distance to the silhouette edge → chunky dome
+// Depth of each column comes from how far it is from the edge of the silhouette, which domes the middle out.
 function voxelizeCells(cells, N) {
   const dist = Array.from({ length: N }, () => Array(N).fill(-1));
   const queue = [];
@@ -328,7 +320,7 @@ function voxelizeCells(cells, N) {
   for (let y = 0; y < N; y++) {
     for (let x = 0; x < N; x++) {
       if (cells[y][x] === null) continue;
-      const h = Math.min(dist[y][x], 4); // half-thickness, capped
+      const h = Math.min(dist[y][x], 4); // half-thickness, capped so nothing gets silly
       for (let z = -h; z < h; z++) {
         voxels.push({ x, y, z, c: cells[y][x] });
         lookup.add(`${x},${y},${z}`);
@@ -338,13 +330,13 @@ function voxelizeCells(cells, N) {
   return { voxels, lookup };
 }
 
-// centered world position of a voxel's low corner (grid → world units)
+// world position of a voxel's low corner, converting out of grid units
 function voxelCorner(vox, N) {
   return { x: vox.x - N / 2, y: vox.y - N / 2, z: vox.z };
 }
 
-// exact volumes on both sides of a plane: whole cubes counted directly,
-// straddling cubes clipped exactly
+// Exact volume either side of a plane again, but for voxels.
+// Cubes fully on one side just get counted, and only the ones the plane actually passes through need clipping.
 function voxelSideVolumes(voxels, N, plane) {
   let plus = 0;
   for (const vox of voxels) {
@@ -374,7 +366,7 @@ function voxelSideVolumes(voxels, N, plane) {
   return { plus, minus: voxels.length - plus, total: voxels.length };
 }
 
-// --- view rotations (orbit camera: yaw around Y, then pitch around X) ---
+// orbit camera: yaw around Y first, then pitch around X
 
 function rotY(p, a) {
   const c = Math.cos(a);
@@ -396,12 +388,12 @@ function viewToWorld(p, yaw, pitch) {
   return rotY(rotX(p, -pitch), -yaw);
 }
 
-// The cutting plane from a screen-space swipe: the line the player drew,
-// extruded straight along the view direction — you slice what you see.
-// a, b are canvas points; cx, cy, S are the projection center and scale.
+// Turn a swipe on screen into a cutting plane, by extruding the line the player drew straight back along the view direction.
+// So whatever the line looks like it's cutting, that's what it cuts.
+// a and b are canvas points, and cx, cy and S are the projection centre and scale.
 function planeFromScreenLine(a, b, yaw, pitch, cx, cy, S) {
   const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-  const m = { x: -(b.y - a.y) / len, y: (b.x - a.x) / len }; // screen normal
+  const m = { x: -(b.y - a.y) / len, y: (b.x - a.x) / len }; // normal to the swipe, in screen space
   const nView = { x: m.x, y: m.y, z: 0 };
   return {
     n: viewToWorld(nView, yaw, pitch),

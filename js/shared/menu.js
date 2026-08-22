@@ -1,17 +1,17 @@
-// Landing page animations: a background where slashes streak across the
-// screen and genuinely cut the drifting shapes and foods (via the real
-// engine), plus live previews of both modes on the menu cards.
-// Uses splitPolygon from engine.js and the sprite builders from foods.js.
+// Everything animated on the menu pages.
+// The slashes streaking across the background actually cut the drifting shapes, through the same engine the game uses, rather than faking it.
+// Also does the live previews on the menu cards.
+// Needs splitPolygon out of engine.js and the sprite builders out of foods.js.
 
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-// the dimension-select landing page (index.html) is the only page with the
-// pixel title canvas; it gets the cutting-board backdrop + chase widget
+// index.html is the only page with the pixel title on it, which is how we tell it apart.
+// It's the one that gets the cutting-board backdrop and the chase widget.
 const LANDING = !!document.getElementById('titleCanvas');
 
 const easeOut = (t) => 1 - (1 - t) ** 3;
 
-// miniature of the game's polygon generator
+// smaller version of the game's polygon generator
 function miniPolygon(cx, cy, rMin, rMax) {
   const n = 6 + Math.floor(Math.random() * 4);
   const steps = [];
@@ -58,7 +58,7 @@ function drawCellsAt(c, cells, x0, y0, s) {
   }
 }
 
-// --- background: parallax drifters that get slashed apart ---
+// Background: shapes drifting up the screen at different depths, waiting to get cut.
 
 const bg = document.getElementById('bg');
 const bgc = bg.getContext('2d');
@@ -70,7 +70,7 @@ function sizeBg() {
 sizeBg();
 addEventListener('resize', sizeBg);
 
-// mouse parallax, in [-1, 1]
+// how far the mouse has pulled the parallax, from -1 to 1
 const parallax = { x: 0, y: 0 };
 addEventListener('mousemove', (e) => {
   parallax.x = (e.clientX / innerWidth) * 2 - 1;
@@ -79,11 +79,11 @@ addEventListener('mousemove', (e) => {
 
 const DRIFT_COLORS = ['#e94560', '#f5a623', '#5f85db', '#8fbf58'];
 
-// A drifter floats upward. Its outline lives in local coordinates centered
-// on the origin (for foods, the traced sprite silhouette), so a slash can be
-// transformed into local space and split it with the game engine.
+// A drifter floats up the screen.
+// Its outline is kept in local coordinates centred on the origin, which for foods is the traced sprite silhouette.
+// That way a slash can be pulled into local space and run through the real engine instead of being faked.
 function makeDrifter(anywhere) {
-  const depth = 0.4 + Math.random() * 0.6; // 1 = near: bigger, faster, brighter
+  const depth = 0.4 + Math.random() * 0.6; // 1 is closest, so bigger and faster and brighter
   const d = {
     depth,
     x: Math.random() * innerWidth,
@@ -92,7 +92,7 @@ function makeDrifter(anywhere) {
     rot: Math.random() * Math.PI * 2,
     vr: (Math.random() - 0.5) * 0.4,
     alpha: 0.05 + 0.13 * depth,
-    split: null, // {pieces, normal, age} after being slashed
+    split: null, // filled in once it's been cut
     cells: null,
     cellSize: 0,
     poly: null,
@@ -115,7 +115,7 @@ function makeDrifter(anywhere) {
 const drifters = [];
 for (let i = 0; i < 18; i++) drifters.push(makeDrifter(true));
 
-// draw one piece of a drifter (or its whole outline) in local coordinates
+// draw either one piece of a drifter or its whole outline, in local coordinates
 function drawDrifterShape(d, points, offset) {
   bgc.save();
   if (offset) bgc.translate(offset.x, offset.y);
@@ -132,7 +132,7 @@ function drawDrifterShape(d, points, offset) {
   bgc.restore();
 }
 
-const SPLIT_LIFE = 1.9; // seconds from slash to respawn
+const SPLIT_LIFE = 1.9; // seconds between getting cut and coming back
 
 function drawDrifter(d, dt) {
   d.y -= d.vy * dt;
@@ -170,9 +170,9 @@ function drawDrifter(d, dt) {
   bgc.restore();
 }
 
-// --- slashes: a line streaks across the screen and cuts what it crosses ---
+// The slashes themselves, which cut whatever they happen to cross.
 
-let slash = null; // {a, b, born}
+let slash = null; // the one in flight, if there is one
 let nextSlashAt = performance.now() + 1500;
 
 function spawnSlash(now) {
@@ -185,7 +185,7 @@ function spawnSlash(now) {
   const b = { x: px + dir.x * D, y: py + dir.y * D };
   slash = { a, b, born: now };
 
-  // cut every drifter the line crosses, in each drifter's local space
+  // cut everything the line crosses, working in each drifter's own local space
   for (const d of drifters) {
     if (d.split) continue;
     const cos = Math.cos(-d.rot);
@@ -234,7 +234,7 @@ function drawSlash(now) {
 }
 
 function drawBackground(now, dt) {
-  if (window.DIMBG_OWNS_BG) return; // dimbg.js animates this page's backdrop
+  if (window.DIMBG_OWNS_BG) return; // dimbg.js has this page's backdrop, so stay out of it
   bgc.clearRect(0, 0, bg.width, bg.height);
   if (LANDING) {
     drawKitchen(now);
@@ -248,59 +248,56 @@ function drawBackground(now, dt) {
   drawSlash(now);
 }
 
-// ===================================================================
-// Landing scene: the clean kitchen picture fills the screen, and the three
-// foods are separate transparent sprites placed on the island table — a
-// breadstick (1D), a pancake (2D), a tiered cake (3D). Drag a knife across
-// one to slice it: only the food splits, its plate never moves.
-// ===================================================================
+// The landing scene.
+// The kitchen picture fills the screen with no food in it, and the three foods sit on the island table as separate transparent sprites.
+// Breadstick for 1D, pancake for 2D, tiered cake for 3D.
+// Dragging a knife across one slices it, and only the food comes apart, never the plate under it.
 
-// the food-free kitchen backdrop, drawn cover-fit; every scene position
-// below lives in this image's own pixel space
+// The backdrop, drawn cover-fit.
+// Every position below is in this image's own pixel space, not the screen's.
 const KITCHEN = new Image();
-KITCHEN.src = 'main_ui_background.jpg';
+KITCHEN.src = 'assets/main_ui_background.jpg';
 const KITCHEN_W = 1376;
 const KITCHEN_H = 768;
 KITCHEN.onload = () => {
-  if (REDUCED && LANDING) drawKitchen(performance.now()); // redraw the static frame
+  if (REDUCED && LANDING) drawKitchen(performance.now()); // no animation loop running, so redraw by hand
 };
 
-// cover-fit transform: scale + offset that map image px to screen px
+// the scale and offset that map image pixels onto screen pixels, cover-fit
 function kitchenFit() {
   const s = Math.max(bg.width / KITCHEN_W, bg.height / KITCHEN_H);
   return { s, x: (bg.width - KITCHEN_W * s) / 2, y: (bg.height - KITCHEN_H * s) / 2 };
 }
 
-// the three food sprites: dest places the sprite on the table (image px);
-// cutX is where the knife lands and the split opens; r is the slice hit
-// radius, ly the label baseline. mask (in sprite px) separates the FOOD from
-// the plate under it — only the food layer slides apart — and plateFill
-// paints the plate's hidden middle so the open gap shows plate, not table.
-// (FOODS is taken: that's the sprite recipe list in foods.js)
+// The three foods on the table.
+// dest puts the sprite on the table in image pixels, cutX is where the knife lands, r is how close you have to get to slice it, and ly is the label baseline.
+// mask is the bit that separates the food from the plate underneath, since only the food layer is allowed to slide apart.
+// plateFill paints in the middle of the plate that the food was covering, so the gap that opens up shows plate rather than table.
+// Called DISHES because FOODS is already the sprite recipe list over in foods.js.
 const TABLE_FOODS = [
-  // the breadstick lies diagonally like in the original picture: rot tilts
-  // it, len/th are its drawn size, dest is the rotated bounding box
-  { mode: '1d.html', label: '1D', name: 'breadstick', accent: '#7e99b8', src: 'breadstick_sprite.png',
+  // The breadstick lies diagonally, the way it does in the picture.
+  // rot is the tilt, len and th are its drawn size, and dest is the bounding box after rotating.
+  { mode: '1d.html', label: '1D', name: 'breadstick', accent: '#7e99b8', src: 'assets/breadstick_sprite.png',
     dest: { x: 550, y: 445, w: 80, h: 70 }, rot: -0.7, len: 92, th: 14, cutX: 590, r: 50, ly: 438 },
-  { mode: '2d.html', label: '2D', name: 'pancake', accent: '#c4826a', src: 'pancake_sprite.png',
+  { mode: '2d.html', label: '2D', name: 'pancake', accent: '#c4826a', src: 'assets/pancake_sprite.png',
     dest: { x: 662, y: 452, w: 76, h: 48 }, cutX: 700, r: 44, ly: 440,
     mask: { e: [75, 33, 61, 34] }, plateFill: { e: [75, 56, 62, 26], col: '#ede9ea' } },
-  // the cake sprite has no plate baked in: a platter is drawn separately
-  // underneath (plate), so the cut can never touch it
-  { mode: '3d.html', label: '3D', name: 'tiered cake', accent: '#9ba873', src: 'cake_sprite.png',
+  // The cake sprite has no plate drawn into it, so a platter gets drawn separately underneath.
+  // Means the cut physically can't reach it.
+  { mode: '3d.html', label: '3D', name: 'tiered cake', accent: '#9ba873', src: 'assets/cake_sprite.png',
     dest: { x: 776, y: 389, w: 78, h: 104 }, cutX: 815, r: 56, ly: 377,
     plate: { cx: 815, cy: 476, rx: 48, ry: 20 } },
 ];
 
-// the food-vs-plate boundary as a path on a sprite-local context
+// traces the line between food and plate, as a path in the sprite's own coordinates
 function traceMask(g, m) {
   g.beginPath();
   if (m.rect) g.rect(...m.rect);
   g.ellipse(m.e[0], m.e[1], m.e[2], m.e[3], 0, 0, Math.PI * 2);
 }
 
-// split each sprite into a FOOD canvas (slides apart when cut) and a PLATE
-// canvas (stays put), with the plate's hidden middle painted in
+// Split each sprite into two canvases: the food, which slides apart when cut, and the plate, which stays where it is.
+// The plate one gets its hidden middle painted in first.
 for (const f of TABLE_FOODS) {
   const img = new Image();
   img.src = f.src;
@@ -324,7 +321,7 @@ for (const f of TABLE_FOODS) {
       pg.globalCompositeOperation = 'destination-out';
       traceMask(pg, f.mask);
       pg.fill();
-      pg.globalCompositeOperation = 'destination-over'; // paints only the hole
+      pg.globalCompositeOperation = 'destination-over'; // draws behind what's there, so it only fills the hole
       pg.beginPath();
       pg.ellipse(f.plateFill.e[0], f.plateFill.e[1], f.plateFill.e[2], f.plateFill.e[3], 0, 0, Math.PI * 2);
       pg.fillStyle = f.plateFill.col;
@@ -336,7 +333,7 @@ for (const f of TABLE_FOODS) {
   };
 }
 
-// pixel-art map for the chopping knife: rows of palette keys ('.' = transparent)
+// the chopping knife as rows of palette keys, where a dot means transparent
 const PIX = {
   knife: {
     pal: { s: '#cfd6e2', '#': '#8f97a8', h: '#5a3a22' },
@@ -348,7 +345,7 @@ const PIX = {
   },
 };
 
-// chunky pixel renderer: centered on cx, bottom edge at baseY
+// draws one of those pixel maps, centred on cx with its bottom edge at baseY
 function drawPixMap(rows, pal, cx, baseY, P) {
   const x0 = Math.round((cx - (rows[0].length * P) / 2) / P) * P;
   const y0 = Math.round(baseY - rows.length * P);
@@ -363,7 +360,7 @@ function drawPixMap(rows, pal, cx, baseY, P) {
   return { x0, y0, w: rows[0].length * P, h: rows.length * P };
 }
 
-// multiply an #rrggbb color's channels by f (clamped), for quick shading
+// scale a hex colour's channels, for quick shading
 function shade(c, f) {
   if (!/^#[0-9a-f]{6}$/i.test(c)) return c;
   return `rgb(${[1, 3, 5]
@@ -371,18 +368,17 @@ function shade(c, f) {
     .join(',')})`;
 }
 
-// a food that has just been sliced: the knife chops, then its FOOD layer
-// splits into two halves that slide apart (the plate stays put)
-let dishSplit = null; // { dish, start }
+// A food mid-slice: the knife comes down, then the food layer parts into two halves that slide away from each other.
+let dishSplit = null;
 
-// separation between the two food halves right now, 0 while the knife falls
+// how far apart the halves are right now, still zero while the knife is falling
 function dishSep(d, now) {
   if (!dishSplit || dishSplit.dish !== d) return 0;
   const t = (now - dishSplit.start) / 1000;
-  return t < 0.28 ? 0 : easeOut(Math.min((t - 0.28) / 0.5, 1)) * 20; // image px
+  return t < 0.28 ? 0 : easeOut(Math.min((t - 0.28) / 0.5, 1)) * 20; // in image px
 }
 
-// distance from segment a→b to point p
+// distance from the segment ab to the point p
 function segDist(a, b, p) {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
@@ -405,8 +401,8 @@ function dishUnderCut(a, b) {
   return best && best.d;
 }
 
-// a platter drawn as its own scene element, underneath a plate-less food
-// sprite — the cut slides the sprite's halves over it and never touches it
+// A platter drawn as its own thing, under a food sprite that has no plate of its own.
+// The halves slide across it and it never gets touched.
 function drawTablePlate(p, fit) {
   const ell = (dy, rx, ry, col) => {
     bgc.beginPath();
@@ -427,14 +423,14 @@ function drawFood(f, now, fit) {
   const dw = d.w * fit.s;
   const dh = d.h * fit.s;
   if (f.foodC) {
-    bgc.imageSmoothingEnabled = true; // sprites downscale; the backdrop upscales
+    bgc.imageSmoothingEnabled = true; // the sprites get scaled down and the backdrop up, both want smoothing
     if (f.plate) drawTablePlate(f.plate, fit);
     const sep = dishSep(f, now);
     const off = sep * fit.s;
     const sw = f.foodC.width;
     const sh = f.foodC.height;
     if (f.rot) {
-      // the tilted breadstick: split in its own axis, halves part lengthwise
+      // the breadstick is tilted, so it splits along its own axis and the halves part lengthwise
       const L = f.len * fit.s;
       const TH = f.th * fit.s;
       bgc.save();
@@ -454,7 +450,7 @@ function drawFood(f, now, fit) {
       if (!sep) {
         bgc.drawImage(f.foodC, dx, dy, dw, dh);
       } else {
-        // only the FOOD canvas splits at the cut line; the plate stays put
+        // only the food canvas splits at the cut line, plate doesn't move
         const cutL = Math.max(1, Math.min(sw - 1, Math.round(((f.cutX - d.x) / d.w) * sw)));
         const dwl = (cutL / sw) * dw;
         bgc.drawImage(f.foodC, 0, 0, cutL, sh, dx - off, dy, dwl, dh);
@@ -465,13 +461,13 @@ function drawFood(f, now, fit) {
   }
   const cx = fit.x + (d.x + d.w / 2) * fit.s;
 
-  // dimension label floating above the food, in the pixel font (bobs in pixel steps)
+  // the 1D/2D/3D label above the food, bobbing in whole pixel steps so it stays crisp
   const bob = Math.round(Math.sin(now / 700 + d.x) * 1.5) * 2;
   const size = Math.max(15, Math.round(16 * fit.s));
   bgc.textAlign = 'center';
   bgc.font = `600 ${size}px 'Pixelify Sans', monospace`;
   bgc.lineWidth = 2.5;
-  bgc.lineJoin = 'round'; // sharp miters close up the glyph counters
+  bgc.lineJoin = 'round'; // mitred joins fill in the holes in letters like o and e
   bgc.strokeStyle = '#4a3320';
   const ly = fit.y + f.ly * fit.s + bob;
   bgc.strokeText(f.label, cx, ly);
@@ -479,12 +475,11 @@ function drawFood(f, now, fit) {
   bgc.fillText(f.label, cx, ly);
   bgc.textAlign = 'left';
 
-  // hit region for slicing (screen space)
+  // where you have to drag to slice this one, in screen space
   f._hit = { x: cx, y: fit.y + (d.y + d.h / 2) * fit.s, r: f.r * fit.s };
 }
 
-// the chop itself: a big knife falls blade-first onto the food's center,
-// lingers through the split, then fades as the wipe takes over
+// The chop: a big knife drops blade-first onto the middle of the food, hangs around while it splits, then fades out as the wipe takes over.
 function drawChopKnife(now, fit) {
   const f = dishSplit.dish;
   const t = (now - dishSplit.start) / 1000;
@@ -494,12 +489,12 @@ function drawChopKnife(now, fit) {
   const x = fit.x + f.cutX * fit.s;
   const yFrom = fit.y + (f.dest.y - 90) * fit.s;
   const yRest = fit.y + (f.dest.y + f.dest.h * 0.55) * fit.s;
-  const fall = Math.min(t / 0.28, 1) ** 2; // accelerating drop
+  const fall = Math.min(t / 0.28, 1) ** 2; // squared, so it accelerates on the way down
   const yTip = yFrom + (yRest - yFrom) * fall;
   bgc.save();
   bgc.globalAlpha = alpha;
   bgc.translate(x + kp * 1.5, yTip - 8.5 * kp);
-  bgc.rotate(-Math.PI / 2); // the sprite is horizontal; point the blade down
+  bgc.rotate(-Math.PI / 2); // the knife sprite is drawn horizontal, so turn it blade-down
   drawPixMap(PIX.knife.rows, PIX.knife.pal, 0, 0, kp);
   bgc.restore();
 }
@@ -508,7 +503,7 @@ function drawKitchen(now) {
   const fit = kitchenFit();
   bgc.imageSmoothingEnabled = false;
   if (!KITCHEN.complete) {
-    bgc.fillStyle = '#a3c6d8'; // wall blue until the picture arrives
+    bgc.fillStyle = '#a3c6d8'; // wall blue, so there's something there before the image loads
     bgc.fillRect(0, 0, bg.width, bg.height);
     return;
   }
@@ -516,7 +511,7 @@ function drawKitchen(now) {
   for (const f of TABLE_FOODS) drawFood(f, now, fit);
   if (dishSplit) drawChopKnife(now, fit);
 
-  // aim line + highlight of the food being crossed
+  // the aim line, plus a highlight on whichever food it's crossing
   if (sceneAim) {
     const hovered = dishUnderCut(sceneAim.a, sceneAim.b);
     if (hovered && hovered._hit) {
@@ -601,24 +596,21 @@ if (LANDING) {
     if (!sceneAim) return;
     const { a, b } = sceneAim;
     sceneAim = null;
-    if (Math.hypot(b.x - a.x, b.y - a.y) < 14) return; // a tap, not a slice
+    if (Math.hypot(b.x - a.x, b.y - a.y) < 14) return; // barely moved, so that was a tap
     const dish = dishUnderCut(a, b);
     if (dish && !dishSplit) {
       sceneFlash = { a, b, accent: dish.accent, start: performance.now() };
-      // chop + split first, then the wipe carries us into the mode
+      // chop and split first, and the wipe afterwards is what takes you into the mode
       dishSplit = { dish, start: performance.now() };
       setTimeout(() => wipeToPage(dish.mode, a, b, dish.accent), 700);
     }
   });
 }
 
-// ===================================================================
-// Landing backdrop: a subtle cutting board, and a chase widget where an
-// avocado (with legs) runs from a knife (with legs) around the window edge,
-// playing hide-and-seek with little idle actions.
-// ===================================================================
+// The landing backdrop: a faint cutting board, plus the chase widget.
+// In that one an avocado with legs runs away from a knife with legs, round and round the edge of the window, with idle animations when nothing much is happening.
 
-// --- the cutting board (fills the whole window) ---
+// the board itself, filling the window
 
 function drawBoardBase() {
   const W = bg.width;
@@ -655,7 +647,7 @@ function drawBoardGrid() {
   }
   bgc.stroke();
 
-  // the board edge the characters walk on, with ruler ticks
+  // the edge the characters actually walk along, with ruler ticks on it
   const info = perimeterInfo();
   bgc.strokeStyle = 'rgba(120, 150, 210, 0.12)';
   bgc.lineWidth = 2;
@@ -678,7 +670,7 @@ function drawBoardGrid() {
   bgc.stroke();
 }
 
-// --- ambient deep background: big slow drifting silhouettes + specks ---
+// big slow silhouettes and specks, way back behind everything else
 
 const ambient = [];
 const specks = [];
@@ -755,10 +747,10 @@ function drawAmbient() {
   bgc.globalAlpha = 1;
 }
 
-// --- the perimeter path (rounded rectangle, walked clockwise) ---
+// The path they walk: a rounded rectangle, always clockwise.
 
 function perimeterInfo() {
-  const M = 2; // feet hug the very window edge (top = "bookmark bar" line)
+  const M = 2; // keeps their feet right up against the window edge
   const r = 38;
   const left = M;
   const top = M;
@@ -786,7 +778,7 @@ function perimeterInfo() {
   return { P, pieces };
 }
 
-// position, travel tangent (CW, unit) and outward normal (unit) at arc-length s
+// position, direction of travel and outward normal at a given distance along the path
 function pathPoint(info, s) {
   s = ((s % info.P) + info.P) % info.P;
   for (const pc of info.pieces) {
@@ -812,16 +804,16 @@ function pathPoint(info, s) {
   return { pos: { x: 0, y: 0 }, tangent: { x: 1, y: 0 }, outward: { x: 0, y: -1 } };
 }
 
-// --- characters ---
+// the characters
 
 const WALK = 62;
-const PROWL = 74; // the knife stalks a bit faster than the food strolls
-const RUN = 170; // the fleeing food
-const HUNT = 214; // the knife — a touch faster, so it eventually catches
+const PROWL = 74; // knife's idle stalking speed, a bit above the food's stroll
+const RUN = 170; // food running away
+const HUNT = 214; // knife chasing, slightly faster than the food, so it does eventually catch up
 
 const runner = {
   sc: 1.32,
-  food: null, // a random food critter, replaced each time it gets sliced
+  food: null, // whichever food it currently is, replaced every time one gets sliced
   s: 0,
   dir: 1,
   speed: 0,
@@ -847,15 +839,15 @@ function setEmote(ch, char, now, dur) {
   ch.emote = { char, until: now + dur * 1000 };
 }
 
-// shortest signed arc-length from a to b (+ = b is clockwise-ahead of a)
+// shortest way round from a to b, positive meaning b is ahead clockwise
 function shortSigned(a, b, P) {
   let d = ((b - a) % P + P) % P;
   if (d > P / 2) d -= P;
   return d;
 }
 
-// Wandering keeps a direction for long stretches and rarely reverses, so the
-// two characters travel most of the perimeter and cross paths often.
+// Wandering holds a direction for a long time and only rarely turns around.
+// Without that they'd both jitter on the spot and never run into each other.
 function wander(ch, now, opts) {
   if (now < ch.timer) return;
   if (Math.random() < opts.pauseChance) {
@@ -867,16 +859,16 @@ function wander(ch, now, opts) {
   } else {
     ch.speed = opts.walk;
     if (opts.seekChance && opts.seekDir && Math.random() < opts.seekChance) {
-      ch.dir = opts.seekDir; // stalk toward the target
+      ch.dir = opts.seekDir; // head toward the target
     } else if (Math.random() < opts.flipChance) {
-      ch.dir *= -1; // otherwise usually keep going
+      ch.dir *= -1; // occasionally double back
     }
     ch.timer = now + opts.moveMin + Math.random() * opts.moveVar;
   }
 }
 
-// which side of the window (0 top, 1 right, 2 bottom, 3 left) a point is on;
-// corner arcs count as the side they lead into
+// Which side of the window a point is on: 0 top, 1 right, 2 bottom, 3 left.
+// The corner arcs count as whichever side they're heading into.
 function edgeIndex(info, s) {
   s = ((s % info.P) + info.P) % info.P;
   const sideByPiece = [0, 1, 1, 2, 2, 3, 3, 0];
@@ -887,9 +879,8 @@ function edgeIndex(info, s) {
   return 0;
 }
 
-// A random food turned into a "critter": its silhouette polygon and cells in
-// a shared local frame (feet at y=0, body above), so it can be drawn and, when
-// caught, split by the real engine.
+// Turns a random food into a critter, meaning its silhouette and cells in one shared local frame with the feet at y=0 and the body above.
+// Same frame for drawing it and for splitting it with the real engine when it gets caught.
 function newRunnerFood() {
   const sprite = roughenSprite(buildSprite(FOODS[Math.floor(Math.random() * FOODS.length)]));
   const sp = 1.9;
@@ -904,8 +895,8 @@ function newRunnerFood() {
     minY = Math.min(minY, p.y);
     maxY = Math.max(maxY, p.y);
   }
-  const ox = -((minX + maxX) / 2) * sp; // center horizontally
-  const oy = -legGap - maxY * sp; // seat the body just above the feet
+  const ox = -((minX + maxX) / 2) * sp; // centre it horizontally
+  const oy = -legGap - maxY * sp; // and sit the body just above the feet
   return {
     cells: sprite.cells,
     sp,
@@ -945,7 +936,7 @@ function sliceRunner(info, now) {
 
 function respawnRunner(info, now) {
   runner.food = newRunnerFood();
-  // crawl out on the far side of the loop from the knife
+  // reappear on the opposite side of the loop from the knife
   runner.s = (((chaser.s + info.P * 0.5 + (Math.random() - 0.5) * info.P * 0.2) % info.P) + info.P) % info.P;
   runner.dir = Math.random() < 0.5 ? 1 : -1;
   runner.speed = 0;
@@ -957,14 +948,14 @@ function respawnRunner(info, now) {
 
 function updateChase(info, now, dt) {
   const P = info.P;
-  const gap = shortSigned(chaser.s, runner.s, P); // + means runner is CW-ahead
+  const gap = shortSigned(chaser.s, runner.s, P); // positive means the food is ahead clockwise
   const absGap = Math.abs(gap);
   const SIGHT = Math.min(320, P * 0.24);
   const LOSE = Math.min(620, P * 0.55);
   const CATCH = 20;
   const sameEdge = edgeIndex(info, runner.s) === edgeIndex(info, chaser.s);
 
-  // knife gloating over a fresh slice
+  // knife standing over a fresh slice, pleased with itself
   if (chaser.state === 'gloat') {
     chaser.speed = 0;
     if (now >= chaser.gloatUntil) {
@@ -983,7 +974,7 @@ function updateChase(info, now, dt) {
       runner.timer = now;
     }
   } else if (
-    // the knife is on the same edge (or already chasing and still near) → bolt
+    // knife is on the same edge, or already chasing and still close, so run
     (sameEdge || absGap < SIGHT || (runner.state === 'flee' && absGap < LOSE)) &&
     chaser.state !== 'gloat'
   ) {
@@ -991,7 +982,7 @@ function updateChase(info, now, dt) {
       runner.state = 'flee';
       setEmote(runner, '!', now, 1.2);
     }
-    runner.dir = gap >= 0 ? 1 : -1; // keep the knife behind
+    runner.dir = gap >= 0 ? 1 : -1; // run whichever way keeps the knife behind
     runner.speed = RUN;
     if (absGap < CATCH) sliceRunner(info, now);
   } else {
@@ -1014,8 +1005,8 @@ function updateChase(info, now, dt) {
     }
   }
 
-  // knife: hunt while the food shares its edge or it's mid-chase; the hunt
-  // persists across corners (up to LOSE) so it doesn't give up at every turn
+  // The knife hunts while the food is on its edge, or while it's already mid-chase.
+  // The chase carries on round corners for a bit, otherwise it gives up at every single turn.
   const huntPersist = chaser.state === 'hunt' && absGap < LOSE;
   const canHunt =
     chaser.state !== 'gloat' &&
@@ -1028,14 +1019,14 @@ function updateChase(info, now, dt) {
       setEmote(chaser, '!', now, 1.2);
     }
     chaser.dir = gap >= 0 ? 1 : -1;
-    chaser.speed = absGap < 180 ? HUNT * 1.35 : HUNT; // lunge when closing in
+    chaser.speed = absGap < 180 ? HUNT * 1.35 : HUNT; // lunge once it's nearly on top of it
   } else if (chaser.state === 'hunt') {
     chaser.state = 'prowl';
     chaser.timer = now;
     setEmote(chaser, '?', now, 1.0);
   }
   if (chaser.state === 'prowl') {
-    // stalk: usually drift toward the food, so encounters keep happening
+    // not chasing, but still drifting toward the food, so they keep bumping into each other
     wander(chaser, now, {
       pauseChance: 0.1,
       pauseMin: 300,
@@ -1064,16 +1055,16 @@ function drawChase(info, now) {
     bgc.save();
     bgc.globalAlpha = 1;
     bgc.translate(pos.x, pos.y);
-    // local +x → facing (travel dir), local +y → outward (toward the wall)
+    // in local space +x is the way it's facing and +y points outward at the wall
     bgc.transform(tangent.x * ch.dir, tangent.y * ch.dir, outward.x, outward.y, 0, 0);
     let extra = 1;
     if (ch === runner && runner.state === 'spawn') {
-      extra = easeOut(Math.min((now - runner.spawnStart) / 650, 1)); // crawl out
+      extra = easeOut(Math.min((now - runner.spawnStart) / 650, 1)); // sliding out from the edge
     }
     bgc.scale(ch.sc * extra, ch.sc * extra);
     if (ch === runner) drawFoodCritter(runner.food, ch, now);
     else drawKnife(ch, now);
-    // emote lives in the sprite's own frame, so it tips/flips with the sprite
+    // the emote is drawn in the sprite's frame, so it tips and flips along with it
     if (ch.emote && now < ch.emote.until && ch.emote.char) {
       const ey = ch === runner ? runner.food.topY - 9 : -80;
       drawEmoteLocal(ch.emote.char, 0, ey);
@@ -1105,7 +1096,7 @@ function drawFoodCritter(food, ch, now) {
   bgc.restore();
 }
 
-// the two halves of a freshly-sliced food flying apart and fading
+// the two halves of a just-sliced food, flying apart and fading out
 function drawSliceFx(now) {
   if (!sliceFx) return;
   const t = (now - sliceFx.start) / 1000;
@@ -1137,7 +1128,7 @@ function drawSliceFx(now) {
   bgc.restore();
 }
 
-// two alternating legs, feet on the baseline (local y = 0)
+// two legs alternating, with the feet on the baseline at local y = 0
 function drawLegs(hipY, xL, xR, phase, stride, legColor, footColor) {
   bgc.lineCap = 'round';
   bgc.lineWidth = 3;
@@ -1168,7 +1159,7 @@ function drawKnife(ch, now) {
   bgc.save();
   bgc.translate(0, bob);
 
-  // blade with a metallic left-to-right gradient
+  // blade, with a gradient across it to read as metal
   const grad = bgc.createLinearGradient(-6, 0, 7, 0);
   grad.addColorStop(0, '#aab3c2');
   grad.addColorStop(0.4, '#eef2f7');
@@ -1183,7 +1174,7 @@ function drawKnife(ch, now) {
   bgc.lineTo(-6, -58);
   bgc.closePath();
   bgc.fill();
-  // spine, fuller line, and a shine streak
+  // spine, the groove along it, and a streak of shine
   bgc.strokeStyle = '#8b94a4';
   bgc.lineWidth = 1.4;
   bgc.beginPath();
@@ -1209,7 +1200,7 @@ function drawKnife(ch, now) {
   bgc.fillStyle = '#3a2718';
   bgc.fillRect(-6, -21, 12, 2);
 
-  // wooden handle with grain and rivets, rounded butt
+  // wooden handle, grain and rivets, rounded off at the end
   bgc.fillStyle = '#8f5b3a';
   bgc.beginPath();
   bgc.roundRect(-6, -19, 12, 16, 4);
@@ -1231,11 +1222,10 @@ function drawKnife(ch, now) {
   bgc.restore();
 }
 
-// --- shapes preview: a polygon gets sliced on loop by the real engine ---
+// Preview card where a polygon gets sliced over and over, again through the real engine.
 
-// This script powers both menu pages: the dimension select (index.html) and
-// the 2D target select (2d.html). Each preview initializes only if its
-// canvas exists on the current page.
+// This file runs on both menu pages, the dimension select and the 2D target select.
+// Each preview only starts up if its canvas is actually on the page.
 const sp = document.getElementById('previewShapes');
 const spc = sp ? sp.getContext('2d') : null;
 const PIECE_PREVIEW_COLORS = ['#e94560', '#f5a623'];
@@ -1268,7 +1258,7 @@ function drawShapesPreview(now) {
   const t = (now - slice.start) / 1000;
 
   if (t < 1.0) {
-    // aim: shape sits there while the cut line sweeps in
+    // shape just sits there while the cut line sweeps in
     tracePath(spc, slice.poly);
     spc.fillStyle = PIECE_PREVIEW_COLORS[0];
     spc.fill();
@@ -1284,7 +1274,7 @@ function drawShapesPreview(now) {
     spc.strokeStyle = 'rgba(255,255,255,0.9)';
     spc.stroke();
   } else if (t < 2.6) {
-    // split: pieces drift apart, fading near the end
+    // then the pieces drift apart and fade out toward the end
     const k = easeOut(Math.min((t - 1.0) / 1.1, 1)) * 9;
     spc.globalAlpha = t < 2.1 ? 1 : 1 - (t - 2.1) / 0.5;
     slice.pieces.forEach((piece, i) => {
@@ -1304,7 +1294,7 @@ function drawShapesPreview(now) {
   }
 }
 
-// --- food preview: pixel foods pop in and bob ---
+// preview card where pixel foods pop in and bob about
 
 const fp = document.getElementById('previewFood');
 const fpc = fp ? fp.getContext('2d') : null;
@@ -1313,7 +1303,7 @@ function newFoodScene() {
   return {
     sprite: roughenSprite(buildSprite(FOODS[Math.floor(Math.random() * FOODS.length)])),
     start: performance.now(),
-    geom: null, // where the sprite was drawn last frame: {x, y, s}
+    geom: null, // where it got drawn last frame, so the slice can be hit-tested against it
   };
 }
 
@@ -1335,8 +1325,8 @@ function drawFoodPreview(now) {
   fpc.globalAlpha = 1;
 }
 
-// --- 3D select page previews: a rotating lumpy solid and a voxel food ---
-// (only initialized on 3d.html, where solids.js is loaded)
+// The 3D page's two previews, a rotating lumpy solid and a voxel food.
+// Only starts up on 3d.html, since that's the only page that loads solids.js.
 
 const s3 = document.getElementById('previewShape3d');
 const f3 = document.getElementById('previewFood3d');
@@ -1352,7 +1342,7 @@ if (f3 && HAS_SOLIDS) {
   f3vox = voxelizeCells(sprite.cells, FOOD_N);
 }
 
-// tiny orthographic painter's-algorithm renderer for the preview cards
+// stripped-down back-to-front renderer, just enough for the preview cards
 function drawMini3D(c, W, H, polys, scale, yaw3, pitch3) {
   const cy = Math.cos(yaw3);
   const sy = Math.sin(yaw3);
@@ -1437,8 +1427,8 @@ function drawFood3dPreview(now) {
   drawMini3D(f3c, f3.width, f3.height, f3polys, 4.6, now / 2200, -0.55 + Math.sin(now / 3000) * 0.12);
 }
 
-// --- dimension previews (landing page): a 1D segment, a 2D plane and a 3D
-// cube, each on its own cut → separate → heal loop ---
+// The three dimension previews on the landing page: a 1D segment, a 2D plane and a 3D cube.
+// Each one loops through cutting, separating and healing back up.
 
 const d1 = document.getElementById('previewD1');
 const d2 = document.getElementById('previewD2');
@@ -1448,29 +1438,29 @@ const d2c = d2 ? d2.getContext('2d') : null;
 const d3c = d3 ? d3.getContext('2d') : null;
 const dimStart = performance.now();
 
-const DIM_PERIOD = 3.8; // seconds per cut cycle
+const DIM_PERIOD = 3.8; // seconds for one full cut cycle
 
-// phase within the cycle: [0,2) idle, [2,2.15) flash, then separate and heal.
-// offset de-syncs the three cards so they don't all cut at once.
+// Where we are in the cycle: idle for the first 2 seconds, a flash, then separate and heal.
+// The offset is there to stop all three cards cutting at the same moment.
 function dimCycle(now, offset) {
   const total = (now - dimStart) / 1000 + offset;
   const t = total % DIM_PERIOD;
   const cycle = Math.floor(total / DIM_PERIOD);
-  let sep = 0; // 0..1 how far apart the halves are
+  let sep = 0; // 0 to 1, how far apart the halves have got
   if (t >= 2.15 && t < 2.9) sep = easeOut(Math.min((t - 2.15) / 0.45, 1));
   else if (t >= 2.9) sep = 1 - easeOut(Math.min((t - 2.9) / 0.8, 1));
   const flash = t >= 2.0 && t < 2.15 ? 1 - (t - 2.0) / 0.15 : 0;
   return { t, cycle, sep, flash };
 }
 
-// cheap deterministic per-cycle random in [0,1)
+// cheap random that's stable within a cycle, so the angle doesn't jitter every frame
 function cycleRand(cycle, salt) {
   const v = Math.sin(cycle * 127.1 + salt * 311.7) * 43758.5453;
   return v - Math.floor(v);
 }
 
-// 1D: a segment with a point wandering along it; the cut splits it along
-// its own axis — the only direction 1D has
+// 1D: a segment with a point wandering up and down it.
+// The cut separates it along its own axis, because that's the only direction available.
 function drawD1(now) {
   const W = d1.width;
   const H = d1.height;
@@ -1499,7 +1489,7 @@ function drawD1(now) {
     d1c.fill();
   }
   if (sep === 0 && flash === 0) {
-    // a point living its one-dimensional life
+    // the point, going back and forth
     const px = x0 + (0.5 + 0.5 * Math.sin(now / 700)) * (x1 - x0);
     d1c.beginPath();
     d1c.arc(px, y, 3.5, 0, Math.PI * 2);
@@ -1518,7 +1508,7 @@ function drawD1(now) {
   }
 }
 
-// 2D: a breathing grid plane, sliced at a different angle every cycle
+// 2D: a grid plane that breathes slightly, sliced at a new angle each cycle
 function drawD2(now) {
   const W = d2.width;
   const H = d2.height;
@@ -1558,7 +1548,7 @@ function drawD2(now) {
   };
 
   d2c.save();
-  // the plane breathes a little so it reads as alive
+  // slight pulse so it doesn't look frozen
   d2c.translate(c.x, c.y);
   d2c.rotate(Math.sin(now / 2100) * 0.04);
   d2c.scale(1 + Math.sin(now / 1500) * 0.02, 1 + Math.sin(now / 1500) * 0.02);
@@ -1594,7 +1584,7 @@ function drawD2(now) {
   d2c.restore();
 }
 
-// 3D: a rotating wireframe cube, cleaved by a plane every cycle
+// 3D: a wireframe cube turning slowly, split by a plane each cycle
 const CUBE_EDGES = [
   [0, 1], [1, 3], [3, 2], [2, 0],
   [4, 5], [5, 7], [7, 6], [6, 4],
@@ -1648,7 +1638,7 @@ function drawD3(now) {
     drawCube();
   } else {
     for (const s of [1, -1]) {
-      // clip to one side of the cutting plane's screen-space line
+      // clip each face to one side of the cut line, in screen space
       const hp = [
         { x: c.x - dir.x * 400, y: c.y - dir.y * 400 },
         { x: c.x + dir.x * 400, y: c.y + dir.y * 400 },
@@ -1676,20 +1666,18 @@ function drawD3(now) {
   }
 }
 
-// --- the title: awkward pixel letters that get sliced every so often ---
-// Each letter is built on the same 24×24 grid as the food sprites and run
-// through the same roughenSprite pass, so the glyphs come out hand-cut and
-// a little different every time they rebuild.
+// The title, in deliberately wonky pixel letters that get sliced now and then.
+// Each letter is built on the same 24x24 grid as the food sprites and goes through the same roughening pass.
+// So the glyphs come out looking hand-cut, and slightly different every time they rebuild.
 
 const tc = document.getElementById('titleCanvas');
 const tcc = tc ? tc.getContext('2d') : null;
 const TITLE_CZ = 4; // screen px per grid cell
 
-// soft pastels pulled from the kitchen picture: terracotta, gold, sage,
-// dusty blue, rose, butter
+// pastels pulled straight out of the kitchen picture so the title doesn't clash with it
 const LETTER_COLORS = ['#e0715a', '#eeb454', '#93bd78', '#6f9fe0', '#e79aae', '#f2cf7e'];
 
-// dark offset copy of a letter's cells, so the title reads on the wall
+// dark copy of a letter, offset behind it, so the title still reads against the wall
 function drawTitleShadow(cells, x0, y0) {
   tcc.fillStyle = 'rgba(74, 51, 32, 0.8)';
   for (let y = 0; y < FOOD_N; y++)
@@ -1698,9 +1686,8 @@ function drawTitleShadow(cells, x0, y0) {
         tcc.fillRect(x0 + x * TITLE_CZ + TITLE_CZ, y0 + y * TITLE_CZ + TITLE_CZ, TITLE_CZ, TITLE_CZ);
 }
 
-// Every stroke junction must overlap orthogonally (no diagonal-only corner
-// touches) — the roughening pass guarantees 4-connectivity, so the base
-// glyphs must be 4-connected to begin with.
+// Every place two strokes meet has to overlap properly, not just touch at a diagonal corner.
+// The roughening pass assumes 4-connectivity, so the glyphs have to be 4-connected before it ever runs.
 const LETTER_FONT = {
   S: ['#####', '#....', '#....', '#####', '....#', '....#', '#####'],
   H: ['#...#', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
@@ -1713,7 +1700,7 @@ const LETTER_FONT = {
   R: ['#####', '#...#', '#...#', '#####', '#.#..', '#.##.', '#..##'],
 };
 
-// 5×7 glyph at 3× → 15×21 cells, centered on the shared 24×24 grid
+// a 5x7 glyph tripled comes to 15x21 cells, which then gets centred on the shared 24x24 grid
 function buildLetterBase(ch, color) {
   const rows = LETTER_FONT[ch];
   const cells = Array.from({ length: FOOD_N }, () => Array(FOOD_N).fill(null));
@@ -1796,7 +1783,7 @@ function drawTitle(now) {
     if (letter.cut) {
       const t = (now - letter.cut.start) / 1000;
       if (t > 0.9) {
-        letter.inst = roughenSprite(letter.base); // rebuilt, freshly awkward
+        letter.inst = roughenSprite(letter.base); // rebuild it, wonky in a different way this time
         letter.cut = null;
         letter.born = now;
       } else {
@@ -1834,9 +1821,9 @@ function drawTitle(now) {
   }
 }
 
-// --- slice-to-enter: drag a cut across a whole card to pick that mode ---
+// Slice to enter: drag a cut right across a card to pick that mode.
 
-// overlay canvas above the page for the aim line and the cut flash
+// canvas sat above the page, just for the aim line and the flash
 const fxo = document.createElement('canvas');
 fxo.id = 'fxOverlay';
 document.body.appendChild(fxo);
@@ -1849,13 +1836,13 @@ function sizeFxo() {
 sizeFxo();
 addEventListener('resize', sizeFxo);
 
-let cardAim = null; // { card, page, a, b } in viewport coords
-let cutFlash = null; // { a, b, start }
+let cardAim = null; // the in-progress aim, in viewport coordinates
+let cutFlash = null; // the flash left behind after a cut lands
 
 const howEl = document.querySelector('.how');
 
-// Shake via inline style — swapping the animation *class* would restart the
-// card's entrance animation and make it blink out for its delay period.
+// Shake by setting the style directly.
+// Swapping the animation class instead restarts the card's entrance animation, which makes it blink out for however long its delay is.
 function flashHint(card) {
   card.classList.add('hint-flash');
   card.style.animation = 'cardshake 0.4s ease';
@@ -1867,7 +1854,7 @@ function flashHint(card) {
   }, 700);
 }
 
-// clip the infinite cut line to the card's rectangle (plus a little overshoot)
+// trim the infinite cut line down to the card's rectangle, with a bit of overshoot
 function lineSpanThroughRect(rectPoly, a, b) {
   const hits = [];
   for (let i = 0; i < rectPoly.length; i++) {
@@ -1894,8 +1881,7 @@ function lineSpanThroughRect(rectPoly, a, b) {
   ];
 }
 
-// Split the card's rectangle with the engine, clip two live clones of the
-// card to the two pieces, send them flying apart, then navigate.
+// Split the card's rectangle with the engine, clip a live clone of the card to each piece, throw them apart, then navigate.
 function sliceCard(card, page, a, b) {
   const r = card.getBoundingClientRect();
   const rectPoly = [
@@ -1906,7 +1892,7 @@ function sliceCard(card, page, a, b) {
   ];
   const [p1, p2] = splitPolygon(rectPoly, a, b);
   if (p1.length < 3 || p2.length < 3) {
-    flashHint(card); // the line missed the card
+    flashHint(card); // line missed the card entirely
     return;
   }
 
@@ -1916,7 +1902,7 @@ function sliceCard(card, page, a, b) {
   const clones = [];
   [p1, p2].forEach((piece, i) => {
     const clone = card.cloneNode(true);
-    // cloned canvases are blank — copy the live preview bitmaps over
+    // cloning a canvas element doesn't copy what's drawn on it, so blit the live previews across by hand
     const src = card.querySelectorAll('canvas');
     clone.querySelectorAll('canvas').forEach((dc, j) => {
       dc.getContext('2d').drawImage(src[j], 0, 0);
@@ -1949,12 +1935,11 @@ function sliceCard(card, page, a, b) {
 
   card.style.visibility = 'hidden';
 
-  // flash only along the card, not across the whole page
+  // flash along the card only, not the full width of the page
   const span = lineSpanThroughRect(rectPoly, a, b);
   if (span) cutFlash = { a: span[0], b: span[1], start: performance.now() };
 
-  // a "coming soon" card can be sliced for fun, but it rebuilds instead of
-  // opening anything
+  // a coming soon card still slices, it just puts itself back together instead of going anywhere
   if (card.dataset.soon) {
     flashHint(card);
     setTimeout(() => {
@@ -1964,8 +1949,7 @@ function sliceCard(card, page, a, b) {
     return;
   }
 
-  // then the whole screen closes like a shutter along the same cut line,
-  // in this mode's accent color, and we enter through it
+  // then the whole screen shuts like a pair of doors along that same cut line, in the mode's accent colour, and we go through it
   const accent = getComputedStyle(card).getPropertyValue('--accent').trim() || '#e94560';
   const viewport = [
     { x: 0, y: 0 },
@@ -1999,8 +1983,8 @@ function sliceCard(card, page, a, b) {
 
 for (const card of document.querySelectorAll('.mode')) {
   const page = card.getAttribute('href');
-  // pointer clicks don't navigate — slicing does. Keyboard Enter
-  // (e.detail === 0) and reduced-motion users still navigate normally.
+  // Clicking a card doesn't follow the link, slicing it does.
+  // Keyboard Enter still works though, which is what the detail check is for, and so does everything if reduced motion is on.
   card.addEventListener('click', (e) => {
     if (!REDUCED && e.detail !== 0) e.preventDefault();
   });
@@ -2024,7 +2008,7 @@ for (const card of document.querySelectorAll('.mode')) {
     const { a, b } = cardAim;
     cardAim = null;
     if (Math.hypot(b.x - a.x, b.y - a.y) < 10) {
-      flashHint(card); // a plain click: nudge toward slicing
+      flashHint(card); // plain click, so hint that they should be slicing
       return;
     }
     sliceCard(card, page, a, b);
@@ -2034,7 +2018,7 @@ for (const card of document.querySelectorAll('.mode')) {
 function drawOverlay(now) {
   fxoc.clearRect(0, 0, fxo.width, fxo.height);
   if (cardAim) {
-    // a finite segment from the press point to the pointer, not a page-wide line
+    // just the segment from where they pressed to where the pointer is, not a line across the whole page
     const { a, b } = cardAim;
     fxoc.save();
     fxoc.setLineDash([10, 8]);
@@ -2075,10 +2059,10 @@ function drawOverlay(now) {
   }
 }
 
-// --- drive it ---
+// start everything up
 
 if (LANDING) {
-  // start the food and knife well apart on the perimeter
+  // put the food and the knife on opposite sides to begin with
   const info0 = perimeterInfo();
   runner.food = newRunnerFood();
   runner.s = info0.P * 0.2;
@@ -2086,7 +2070,7 @@ if (LANDING) {
 }
 
 if (REDUCED) {
-  // static frame of each preview, no motion
+  // reduced motion, so draw one frame of each preview and leave it there
   if (LANDING) drawKitchen(performance.now());
   if (tc) drawTitle(performance.now());
   if (sp) drawShapesPreview(slice.start + 500);

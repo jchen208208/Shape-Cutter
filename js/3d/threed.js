@@ -1,7 +1,6 @@
-// Shared 3D game shell: orthographic software renderer (painter's algorithm),
-// orbit controls, rotate/slice mode toggle, rounds, reveal and scoring.
-// The mode script loaded before this file (shapes3d.js or foods3d.js)
-// supplies makeTarget3D() → { kind: 'mesh'|'voxel', ..., radius }.
+// The shell both 3D modes run on.
+// Software renderer, orthographic, sorted back to front, plus orbit controls, the rotate and slice modes, rounds and scoring.
+// Whichever mode script loaded first, shapes3d.js or foods3d.js, supplies makeTarget3D(), which returns either a mesh or a voxel target.
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -63,7 +62,7 @@ function shade3(hex, f) {
   return '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0');
 }
 
-// --- view: orbit camera, orthographic projection ---
+// orbit camera, orthographic projection
 
 let yaw = 0.6;
 let pitch = -0.5;
@@ -74,14 +73,14 @@ function updateView() {
   const sy = Math.sin(yaw);
   const cp = Math.cos(pitch);
   const sp = Math.sin(pitch);
-  // v = Rx(pitch) · Ry(yaw) · w
+  // yaw first, then pitch: v = Rx(pitch) · Ry(yaw) · w
   view.m = [cy, 0, sy, sp * sy, cp, -sp * cy, -cp * sy, sp, cp * cy];
   view.S = (Math.min(canvas.width, canvas.height) * 0.3) / target.radius;
   view.cx = canvas.width / 2;
   view.cy = canvas.height / 2;
 }
 
-// world point → screen x/y + view depth z (+z is toward the viewer)
+// world point to screen x and y, keeping the view depth in z, where positive is toward the viewer
 function tf(p) {
   const m = view.m;
   return {
@@ -91,7 +90,7 @@ function tf(p) {
   };
 }
 
-// direction → view space (no projection)
+// rotate a direction into view space, without projecting it
 function tfDir(p) {
   const m = view.m;
   return {
@@ -109,7 +108,7 @@ const LIGHT = (() => {
 
 const faceShade = (nv) => 0.55 + 0.45 * Math.max(0, nv.x * LIGHT.x + nv.y * LIGHT.y + nv.z * LIGHT.z);
 
-// --- render items: { z, pts (screen), fill }, painter-sorted far → near ---
+// Everything to draw ends up in one flat list and gets sorted back to front before drawing.
 
 function paintItems(items) {
   items.sort((a, b) => a.z - b.z);
@@ -120,16 +119,16 @@ function paintItems(items) {
     ctx.closePath();
     ctx.fillStyle = it.fill;
     ctx.fill();
-    ctx.strokeStyle = it.fill; // hairline stroke closes antialiasing seams
+    ctx.strokeStyle = it.fill; // stroking in the fill colour hides the antialiasing seams between neighbouring faces
     ctx.stroke();
   }
 }
 
-// polys: [{ pts: [world...], n: outward world normal, color }]
+// each poly is its world points, its outward normal, and a colour
 function collectPolys(polys, out, ox, oy) {
   for (const poly of polys) {
     const nv = tfDir(poly.n);
-    if (nv.z <= 0) continue; // backface
+    if (nv.z <= 0) continue; // facing away, so skip it
     const pts = poly.pts.map((p) => {
       const s = tf(p);
       return { x: s.x + ox, y: s.y + oy, z: s.z };
@@ -140,7 +139,7 @@ function collectPolys(polys, out, ox, oy) {
   }
 }
 
-// --- building render polys from targets ---
+// turning a target into something drawable
 
 const VOX_DIRS = [
   { d: { x: 1, y: 0, z: 0 }, o: [[1, 0, 0], [1, 1, 0], [1, 1, 1], [1, 0, 1]] },
@@ -191,14 +190,14 @@ function centroidOf(pts) {
   return { x: x / pts.length, y: y / pts.length, z: z / pts.length };
 }
 
-// --- game state ---
+// game state
 
-let state = 'aim'; // aim → reveal → … → over
+let state = 'aim'; // aim, then reveal, round after round, then over
 let round = 1;
 let total = 0;
 let target = makeTarget3D();
 let wholePolys = null;
-let pieces = null; // [{ polys, centroid }, { polys, centroid }]
+let pieces = null; // the two halves, once it's been cut
 let cutPlane = null;
 let pcts = [0, 0];
 let roundScore = 0;
@@ -207,7 +206,7 @@ let message = '';
 let swipe = null;
 let orbit = null;
 let revealDrag = null;
-const activePointers = new Map(); // for two-finger-touch rotation
+const activePointers = new Map(); // tracked so two-finger rotation works on touch
 let primaryId = null;
 
 function buildWholePolys() {
@@ -239,7 +238,7 @@ function buildMeshPiece(side) {
   }
   for (const pts of caps) {
     list.push({ pts, n: capN, color: shade3(target.color, 0.7) });
-    // caps as seen from the other side too (canvas has no double-sided fill)
+    // canvas won't fill a polygon from both sides, so the caps get added again facing the other way
     list.push({ pts: [...pts].reverse(), n: side > 0 ? cutPlane.n : capN, color: shade3(target.color, 0.7) });
   }
   return { polys: list, centroid: centroidOf(all.length ? all : [{ x: 0, y: 0, z: 0 }]) };
@@ -288,7 +287,7 @@ function attemptCut() {
   revealStart = performance.now();
 }
 
-// --- drawing ---
+// drawing
 
 function drawHint() {
   const label =
@@ -309,8 +308,8 @@ function drawReveal(t) {
   ctx.save();
   ctx.translate(sx, sy);
 
-  // separation follows the cut plane's normal as currently seen, so the
-  // pieces stay correct even while being spun
+  // The halves separate along the cut plane's normal as it currently appears, not as it was when you cut.
+  // That way it still looks right if you spin the thing mid-reveal.
   const nv = tfDir(cutPlane.n);
   const nl = Math.hypot(nv.x, nv.y) || 1;
   const m2 = { x: nv.x / nl, y: nv.y / nl };
@@ -366,7 +365,7 @@ function draw(now) {
   updateView();
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // HUD chips, top-right
+  // HUD chips, top right
   ctx.fillStyle = 'rgba(15, 52, 96, 0.8)';
   ctx.strokeStyle = '#3a3f5c';
   ctx.beginPath();
@@ -410,12 +409,9 @@ function draw(now) {
   drawHint();
 }
 
-// --- input ---
-
-// Left-drag slices. Rotation: hold both mouse buttons (or right-drag, which
-// is what a trackpad two-finger press reports), put a second finger down, or
-// two-finger scroll. Pressing the second button mid-swipe converts it into a
-// rotation instead of a cut.
+// Left-drag slices.
+// To rotate instead: hold both mouse buttons, right-drag, which is what a trackpad two-finger press reports anyway, put a second finger down, or two-finger scroll.
+// Pressing that second button partway through a swipe turns it into a rotation rather than a cut.
 
 canvas.addEventListener('contextmenu', (event) => event.preventDefault());
 
